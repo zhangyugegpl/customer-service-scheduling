@@ -20,6 +20,7 @@
 - [x] 实现上月 Excel 边界导入与人工录入入口。
 - [x] 实现排班预览、版本保存、历史打开、Excel/CSV 导出。
 - [x] 实现配置 Excel/JSON 导入导出。
+- [x] 修复 Excel 配置导入的非法 ID 兼容问题：员工、岗位、规则与指定日期 ID 会自动规范化为 UUID，并补充回归单测。
 - [x] 实现版本化 JSON 仓储、原子保存、快照、滚动备份、校验恢复和失效写锁恢复。
 - [x] 实现安全 preload 白名单 IPC、渲染器沙箱、来源校验和导航限制。
 - [x] 实现 PyInstaller 独立求解器，并显式打包 OR-Tools 原生 DLL。
@@ -30,7 +31,7 @@
 ## 验证结果
 
 - [x] TypeScript 类型检查通过。
-- [x] TypeScript 单元/集成测试：15/15 通过。
+- [x] TypeScript 单元/集成测试：16/16 通过。
 - [x] Python 求解器测试：2/2 通过。
 - [x] 开发模式求解器健康检查通过。
 - [x] 独立 EXE 求解器健康检查通过。
@@ -50,6 +51,7 @@
 - 成品求解器启动 ENOENT：分离 `app.asar` 应用根目录与 `process.resourcesPath` 子进程工作目录。
 - Electron 44 首轮 E2E 下载超时遗留进程：提高启动超时，并为每次 E2E 使用独立临时 Chromium profile。
 - 依赖审计发现旧 Electron 和 ExcelJS 的 uuid 传递依赖公告：升级 Electron 44.4.5、Vitest 5.0.2，并将 uuid 覆盖到仍支持 CommonJS 的 11.1.1；复查为 0 漏洞。
+- 外部 Excel 中的规则 ID 不是 UUID：导入器此前直接保留该值，随后被配置 Schema 拦截。现统一自动生成合法 UUID，并以非法员工、岗位和规则 ID 的导入用例回归测试。
 
 ## 防死循环记录
 

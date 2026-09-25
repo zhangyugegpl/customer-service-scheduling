@@ -4,6 +4,7 @@ import path from 'node:path';
 import ExcelJS from 'exceljs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../../packages/contracts/defaultConfig';
+import { scheduleConfigSchema } from '../../packages/contracts/schemas';
 import type { Assignment, ScheduleResult } from '../../packages/contracts/types';
 import { exportConfigurationTemplate, exportScheduleCsv, exportScheduleWorkbook, importConfigurationWorkbook } from '../../packages/excel/service';
 import { getMonthDates } from '../../packages/domain/date';
@@ -80,6 +81,39 @@ describe('Excel 导入导出', () => {
     expect(imported.employees).toHaveLength(config.employees.length);
     expect(imported.positions).toHaveLength(config.positions.length);
     expect(imported.positions[0]!.defaultMinQuota).toBe(config.positions[0]!.defaultMinQuota);
+  });
+
+  it('导入时会将 Excel 中的非法 ID 规范化为 UUID', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'invalid-ids.xlsx');
+    const config = createDefaultConfig();
+    const [early, middle, review, backoffice] = config.positions;
+    early!.id = 'EARLY';
+    middle!.id = 'MIDDLE';
+    review!.id = 'REVIEW';
+    backoffice!.id = 'BACKOFFICE';
+    config.employees.forEach((employee, index) => {
+      employee.id = `EMPLOYEE-${index + 1}`;
+      employee.skillPositionIds = [early!.id, middle!.id, review!.id, backoffice!.id];
+    });
+    config.rules.groups = [{
+      id: 'GROUP-001',
+      name: '测试同休组',
+      employeeIds: [config.employees[0]!.id, config.employees[1]!.id, config.employees[2]!.id],
+    }];
+    config.rules.exclusionPairs = [{
+      id: 'PAIR-001',
+      name: '测试互斥对',
+      employeeIds: [config.employees[3]!.id, config.employees[4]!.id],
+    }];
+    await exportConfigurationTemplate(filePath, config);
+
+    const imported = await importConfigurationWorkbook(filePath);
+    expect(() => scheduleConfigSchema.parse(imported)).not.toThrow();
+    expect(imported.rules.groups[0]!.id).toMatch(/^[0-9a-f-]{36}$/iu);
+    expect(imported.rules.exclusionPairs[0]!.id).toMatch(/^[0-9a-f-]{36}$/iu);
+    expect(imported.employees.every((employee) => /^[0-9a-f-]{36}$/iu.test(employee.id))).toBe(true);
+    expect(imported.positions.every((position) => /^[0-9a-f-]{36}$/iu.test(position.id))).toBe(true);
   });
 
   it('CSV 以 BOM 开头', async () => {

@@ -68,6 +68,13 @@ function splitList(value: string): string[] {
   return value.split(/[，,、;；\s]+/u).map((item) => item.trim()).filter(Boolean);
 }
 
+function readUuidOrCreate(cell: ExcelJS.Cell): string {
+  const value = readText(cell);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+    ? value
+    : randomUUID();
+}
+
 function metadataSheet(workbook: ExcelJS.Workbook, values: Record<string, string | number>): void {
   const sheet = workbook.addWorksheet('元数据');
   sheet.state = 'veryHidden';
@@ -294,7 +301,7 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
     const name = readText(row.getCell(2));
     if (!name) return;
     base.positions.push({
-      id: readText(row.getCell(1)) || randomUUID(),
+      id: readUuidOrCreate(row.getCell(1)),
       name,
       color: readText(row.getCell(3)) || '#D9EAF7',
       defaultMinQuota: parseInteger(readText(row.getCell(4))),
@@ -308,7 +315,7 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
     const name = readText(row.getCell(3));
     if (!name) return;
     base.employees.push({
-      id: readText(row.getCell(1)) || randomUUID(),
+      id: readUuidOrCreate(row.getCell(1)),
       code: readText(row.getCell(2)) || `AUTO-${number}`,
       name,
       active: !['否', '0', 'false'].includes(readText(row.getCell(4)).toLowerCase()),
@@ -334,8 +341,8 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
     const type = readText(row.getCell(2));
     const name = readText(row.getCell(3));
     const members = splitList(readText(row.getCell(4))).map((code) => employeeByCode.get(code)?.id).filter((id): id is string => Boolean(id));
-    if (type === '三人组' && members.length >= 2) base.rules.groups.push({ id: readText(row.getCell(1)) || randomUUID(), name: name || '三人组', employeeIds: members });
-    else if (type === '互斥对' && members.length === 2) base.rules.exclusionPairs.push({ id: readText(row.getCell(1)) || randomUUID(), name: name || '互斥对', employeeIds: [members[0]!, members[1]!] });
+    if (type === '三人组' && members.length >= 2) base.rules.groups.push({ id: readUuidOrCreate(row.getCell(1)), name: name || '三人组', employeeIds: members });
+    else if (type === '互斥对' && members.length === 2) base.rules.exclusionPairs.push({ id: readUuidOrCreate(row.getCell(1)), name: name || '互斥对', employeeIds: [members[0]!, members[1]!] });
     else if (type === '参数' && name in base.rules) {
       (base.rules as unknown as Record<string, number>)[name] = parseInteger(readText(row.getCell(5)));
     }
@@ -358,7 +365,7 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
     if (number === 1) return;
     const type = readText(row.getCell(4));
     const day = readText(row.getCell(3));
-    const id = readText(row.getCell(1)) || randomUUID();
+    const id = readUuidOrCreate(row.getCell(1));
     if (type === '指定休息人数') base.specifiedRestCounts.push({ id, date: day, count: parseInteger(readText(row.getCell(5))) });
     else {
       const employee = employeeByCode.get(readText(row.getCell(2)));
