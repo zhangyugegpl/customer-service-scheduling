@@ -1,0 +1,24 @@
+{
+  "templateVersion": "1.0.0",
+  "schedule": {
+    "detailSheet": "排班表",
+    "statisticsSheet": "统计",
+    "metadataSheet": "元数据",
+    "titleRow": 1,
+    "headerRow": 2,
+    "dataStartRow": 3,
+    "employeeCodeColumn": 1,
+    "employeeNameColumn": 2,
+    "dateStartColumn": 3
+  },
+  "configurationSheets": [
+    "员工信息",
+    "岗位与配额",
+    "日期配额",
+    "排班规则",
+    "约束优先级",
+    "指定日期",
+    "元数据"
+  ]
+}
+

@@ -1,0 +1,62 @@
+# 开发进度
+
+> 最后更新：2026-09-25
+
+## 当前阶段
+
+阶段 6：首个完整可运行版本交付（已完成）
+
+## 已完成
+
+- [x] 审阅并固化 PRD、升级方案与技术方案，取消“弹性日”，不加入“排班解释与调整助手”。
+- [x] 初始化 Git 仓库，建立忽略规则与模块化目录结构。
+- [x] 建立 Electron 44 + React 19 + TypeScript 5 + Vite 7 工程。
+- [x] 建立共享数据协议、Zod Schema、默认演示数据和配置版本号。
+- [x] 实现人员、岗位、“至少达到”配额、指定日与规则配置界面。
+- [x] 实现一人一天唯一状态及 H1～H9 硬约束校验。
+- [x] 实现 S1～S5 软约束评分、问题清单和可发布/例外/无解/超时状态。
+- [x] 实现 OR-Tools CP-SAT 严格求解、降级求解、强制修改和智能调班。
+- [x] 实现周一至周日口径、残缺周衔接，以及连休、连续上班、倒班跨月计算。
+- [x] 实现上月 Excel 边界导入与人工录入入口。
+- [x] 实现排班预览、版本保存、历史打开、Excel/CSV 导出。
+- [x] 实现配置 Excel/JSON 导入导出。
+- [x] 实现版本化 JSON 仓储、原子保存、快照、滚动备份、校验恢复和失效写锁恢复。
+- [x] 实现安全 preload 白名单 IPC、渲染器沙箱、来源校验和导航限制。
+- [x] 实现 PyInstaller 独立求解器，并显式打包 OR-Tools 原生 DLL。
+- [x] 实现带中文注释的一键安装、环境变量配置、完整验证和发布脚本。
+- [x] 编写 README 与《安装与常见问题》文档。
+- [x] 生成 Windows x64 便携版 EXE、ZIP 和未打包运行目录。
+
+## 验证结果
+
+- [x] TypeScript 类型检查通过。
+- [x] TypeScript 单元/集成测试：15/15 通过。
+- [x] Python 求解器测试：2/2 通过。
+- [x] 开发模式求解器健康检查通过。
+- [x] 独立 EXE 求解器健康检查通过。
+- [x] React/Electron 生产构建通过。
+- [x] 开发构建 E2E：启动 → 选月份 → 生成 → 查看 → 保存 → 历史打开，通过。
+- [x] 成品 E2E：不提供 Python/PYTHONPATH/外部求解器，使用包内求解器完成全流程，通过。
+- [x] 成品界面截图人工检查通过。
+- [x] `npm audit` 全量审计：0 个已知漏洞。
+
+## 问题及解决方案
+
+- 中文路径下 Python `venv` 初始化失败：改用项目本地 `.python-packages` 和 `pip --target`，安装脚本不污染全局环境。
+- Electron `file://` 页面静态资源为空：Vite `base` 改为相对路径。
+- preload 暴露名称与 Chromium 原生 `window.scheduler` 冲突：改为 `window.schedulerApi`。
+- PyInstaller 漏收 OR-Tools DLL：在 spec 中通过 `collect_dynamic_libs('ortools')` 显式收集并健康检查。
+- Windows PowerShell 5 中文脚本解析失败：所有 `.ps1` 使用 UTF-8 BOM，并使用 `npm.cmd`/`npx.cmd` 避免严格模式冲突。
+- 成品求解器启动 ENOENT：分离 `app.asar` 应用根目录与 `process.resourcesPath` 子进程工作目录。
+- Electron 44 首轮 E2E 下载超时遗留进程：提高启动超时，并为每次 E2E 使用独立临时 Chromium profile。
+- 依赖审计发现旧 Electron 和 ExcelJS 的 uuid 传递依赖公告：升级 Electron 44.4.5、Vitest 5.0.2，并将 uuid 覆盖到仍支持 CommonJS 的 11.1.1；复查为 0 漏洞。
+
+## 防死循环记录
+
+- 没有同一问题超过 5 次修复。
+- 开发构建首屏问题在第 4 轮通过；成品启动问题在第 3 轮通过；独立求解器打包问题在第 3 轮通过。
+
+## 后续非阻塞事项
+
+- 正式对外分发前配置公司 Windows 代码签名证书和专用应用图标。
+- 有真实历史排班数据后，可基于用户反馈继续校准 S1～S5 权重与大规模性能指标。

@@ -1,0 +1,87 @@
+{
+  "name": "customer-service-scheduling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "离线客服排班计划工具",
+  "main": "dist-electron/main.mjs",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently -k -n renderer,electron -c cyan,magenta \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "npm run typecheck && vite build && npm run build:electron",
+    "build:electron": "node scripts/build-electron.mjs",
+    "build:solver": "cross-env PYTHONPATH=.python-packages python -m PyInstaller --noconfirm --clean --distpath apps/solver/dist --workpath apps/solver/build apps/solver/scheduler-solver.spec",
+    "package": "npm run build:solver && npm run build && electron-builder --win portable zip --x64",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:solver": "cross-env PYTHONPATH=.python-packages python -m unittest discover -s apps/solver/tests -p \"test_*.py\"",
+    "test:e2e": "node tests/e2e/app.e2e.mjs",
+    "test:e2e:packaged": "node tests/e2e/packaged.e2e.mjs",
+    "test:all": "npm run test && npm run test:solver",
+    "check": "npm run typecheck && npm run test:all && npm run build",
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1",
+    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1",
+    "health:solver": "apps\\solver\\dist\\scheduler-solver.exe --health",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.10",
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^5.0.2",
+    "wait-on": "^9.0.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  },
+  "build": {
+    "appId": "com.local.customer-service-scheduling",
+    "productName": "客服排班计划工具",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "apps/solver/dist/scheduler-solver.exe",
+        "to": "solver/scheduler-solver.exe"
+      },
+      {
+        "from": "templates",
+        "to": "templates"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "zip"
+      ],
+      "artifactName": "客服排班计划工具-${version}-${arch}.${ext}"
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
