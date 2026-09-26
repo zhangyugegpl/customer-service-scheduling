@@ -50,6 +50,10 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
     ...config.positions.map((position) => ({ label: shortStateLabel(position.name), state: position.id as AssignmentState })),
     { label: '总计', state: undefined },
   ], [config.positions]);
+  const employeeSummaryColumns = useMemo(() => [
+    { id: 'OFF', label: '休', state: 'OFF' as AssignmentState },
+    ...config.positions.map((position) => ({ id: position.id, label: shortStateLabel(position.name), state: position.id as AssignmentState })),
+  ], [config.positions]);
   const configOutdated = Boolean(schedule?.configUpdatedAt && schedule.configUpdatedAt !== config.updatedAt);
   const middleSummary = useMemo(() => {
     const middle = config.positions.find((position) => position.name.includes('中'));
@@ -110,7 +114,7 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
           <div className="section-heading"><div><p className="eyebrow">SCHEDULE GRID</p><h2>月度排班表</h2><p>点击任意单元格进行强制修改或智能调班。</p></div><div className="legend"><span className="legend-item off">休息</span>{config.positions.map((position) => <span className="legend-item" style={{ background: position.color }} key={position.id}>{position.name}</span>)}</div></div>
           <div className="schedule-scroll">
             <table className="schedule-table">
-              <thead><tr><th className="sticky-col employee-col">员工</th><th className="sticky-col code-col">编号</th>{dates.map((date) => <th key={date}>{formatChineseDate(date)}</th>)}{config.positions.map((position) => <th className="summary-col" key={position.id}>{shortStateLabel(position.name)}</th>)}</tr></thead>
+              <thead><tr><th className="sticky-col employee-col">员工</th><th className="sticky-col code-col">编号</th>{dates.map((date) => <th key={date}>{formatChineseDate(date)}</th>)}{employeeSummaryColumns.map((column) => <th className="summary-col" key={column.id}>{column.label}</th>)}</tr></thead>
               <tbody>
                 {activeEmployees.map((employee) => (
                   <tr key={employee.id}>
@@ -131,7 +135,13 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
                         </td>
                       );
                     })}
-                    {config.positions.map((position) => <td className="summary-cell" key={position.id}>{employee.skillPositionIds.includes(position.id) ? statistics.byEmployee[employee.id]?.[position.id] ?? 0 : '—'}</td>)}
+                    {employeeSummaryColumns.map((column) => (
+                      <td className="summary-cell" key={column.id}>
+                        {column.state === 'OFF'
+                          ? statistics.byEmployee[employee.id]?.OFF ?? 0
+                          : employee.skillPositionIds.includes(column.state) ? statistics.byEmployee[employee.id]?.[column.state] ?? 0 : '—'}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -147,9 +157,9 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
                         : Object.values(daily).reduce((sum, count) => sum + count, 0);
                       return <td className="daily-summary-cell" key={date}>{value}</td>;
                     })}
-                    {config.positions.map((position) => {
-                      const total = activeEmployees.reduce((sum, employee) => sum + (statistics.byEmployee[employee.id]?.[position.id] ?? 0), 0);
-                      return <td className="summary-cell summary-total-cell" key={position.id}>{summaryRow.state ? '—' : total}</td>;
+                    {employeeSummaryColumns.map((column) => {
+                      const total = activeEmployees.reduce((sum, employee) => sum + (statistics.byEmployee[employee.id]?.[column.state] ?? 0), 0);
+                      return <td className="summary-cell summary-total-cell" key={column.id}>{summaryRow.state ? '—' : total}</td>;
                     })}
                   </tr>
                 ))}

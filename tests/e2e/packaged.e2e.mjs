@@ -47,6 +47,7 @@ try {
     throw error;
   }
   assert.match(await page.title(), /客服排班计划工具/);
+  assert.equal((await page.evaluate(() => window.schedulerApi.getAppInfo())).appVersion, '0.2.1');
 
   await page.locator('.month-control input').fill('2026-11');
   await page.getByRole('button', { name: /排班规则/ }).click();
@@ -55,6 +56,8 @@ try {
   await page.locator('.topbar .primary-button').click();
   await page.waitForSelector('.status-banner.publishable', { timeout: 60_000 });
   assert.equal(await page.locator('.schedule-table tbody tr').count(), 9);
+  assert.deepEqual(await page.locator('.schedule-table thead .summary-col').allTextContents(), ['休', '早', '中', '审单', '后台']);
+  assert.equal((await page.locator('.schedule-table tbody tr').first().locator('.summary-cell').allTextContents())[0], '6');
   assert.match(await page.locator('.score-card').innerText(), /S2 · 必须满足/);
   assert.match(await page.locator('.score-card').innerText(), /实际极差 [0-3] \/ 目标 ≤ 3/);
   await page.getByRole('button', { name: '保存版本' }).click();

@@ -47,7 +47,9 @@ try {
   assert.equal(await page.locator('.status-banner.publishable').count(), 1, `未生成可发布排班：${await page.locator('.status-banner').innerText()}\n${await page.locator('.issue-card').innerText()}\n${JSON.stringify({ modes: savedConfig.softConstraints.modes, highestPriority: savedConfig.softConstraints.highestPriority, middleShiftMaxRange: savedConfig.rules.middleShiftMaxRange })}`);
   await page.waitForSelector('.schedule-table tbody tr', { timeout: 10_000 });
   assert.equal(await page.locator('.schedule-table tbody tr').count(), 9);
-  assert.equal(await page.locator('.schedule-table thead .summary-col').count(), 4);
+  assert.equal(await page.locator('.schedule-table thead .summary-col').count(), 5);
+  assert.deepEqual(await page.locator('.schedule-table thead .summary-col').allTextContents(), ['休', '早', '中', '审单', '后台']);
+  assert.equal((await page.locator('.schedule-table tbody tr').first().locator('.summary-cell').allTextContents())[0], '6');
   assert.equal(await page.locator('.schedule-table tfoot tr').count(), 6);
   await page.waitForSelector('.score-card');
   assert.match(await page.locator('.score-card').innerText(), /S2 · 必须满足/);

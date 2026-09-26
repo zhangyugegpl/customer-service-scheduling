@@ -49,4 +49,4 @@ tests              单元、集成与 Electron E2E 测试
 
 ## 当前版本
 
-版本 `0.2.0`，配置 Schema v1，模板 v1.1.0，求解器 v1.1.0。开发状态和已验证事项见 [PROGRESS.md](PROGRESS.md)。
+版本 `0.2.1`，配置 Schema v1，模板 v1.1.0，求解器 v1.1.0。开发状态和已验证事项见 [PROGRESS.md](PROGRESS.md)。
