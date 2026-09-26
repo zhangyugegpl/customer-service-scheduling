@@ -59,10 +59,11 @@ export const scheduleConfigSchema = z.object({
     id: uuid,
     employeeId: uuid,
     date: isoDate,
+    endDate: isoDate.optional(),
     state: z.string().min(1),
     locked: z.literal(true),
   })),
-  specifiedRestCounts: z.array(z.object({ id: uuid, date: isoDate, count: z.number().int().min(0).max(999) })),
+  specifiedRestCounts: z.array(z.object({ id: uuid, date: isoDate, endDate: isoDate.optional(), count: z.number().int().min(0).max(999) })),
 });
 
 export const boundaryStateSchema = z.object({
@@ -95,4 +96,3 @@ export const generateScheduleRequestSchema = z.object({
 });
 
 export type ScheduleConfigInput = z.input<typeof scheduleConfigSchema>;
-

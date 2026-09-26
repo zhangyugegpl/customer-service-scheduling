@@ -16,6 +16,14 @@ def month_dates(target_month: str) -> list[str]:
     return [f"{year:04d}-{month:02d}-{day:02d}" for day in range(1, calendar.monthrange(year, month)[1] + 1)]
 
 
+def inclusive_dates(start_day: str, end_day: str | None = None) -> list[str]:
+    start = date.fromisoformat(start_day)
+    end = date.fromisoformat(end_day or start_day)
+    if end < start:
+        raise ValueError("结束日期不能早于开始日期。")
+    return [(start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
+
+
 def quota_for(position: dict[str, Any], day: str) -> int:
     return int(position.get("dateQuotaOverrides", {}).get(day, position["defaultMinQuota"]))
 
@@ -112,23 +120,24 @@ def build_model(request: dict[str, Any], relaxed: bool) -> BuiltModel:
     # H6/H7/H9：指定状态始终锁定；预检查负责排除无技能或冲突指定。
     seen_locks: set[tuple[str, str, str]] = set()
     for locked in config.get("specifiedAssignments", []):
-        key = (locked["employeeId"], locked["date"], locked["state"])
-        if key in variables and key not in seen_locks:
-            model.add(variables[key] == 1)
-            seen_locks.add(key)
+        for day in inclusive_dates(locked["date"], locked.get("endDate")):
+            key = (locked["employeeId"], day, locked["state"])
+            if key in variables and key not in seen_locks:
+                model.add(variables[key] == 1)
+                seen_locks.add(key)
 
     # H8：指定日期休息人数。
     for specified in config.get("specifiedRestCounts", []):
-        day = specified["date"]
-        rests = [variables[(employee["id"], day, "OFF")] for employee in employees if (employee["id"], day, "OFF") in variables]
-        target = int(specified["count"])
-        if relaxed:
-            below = model.new_int_var(0, len(employees), f"daily_rest_below_{day}")
-            above = model.new_int_var(0, len(employees), f"daily_rest_above_{day}")
-            model.add(sum(rests) + below - above == target)
-            hard_penalties.extend([below * 30, above * 30])
-        else:
-            model.add(sum(rests) == target)
+        for day in inclusive_dates(specified["date"], specified.get("endDate")):
+            rests = [variables[(employee["id"], day, "OFF")] for employee in employees if (employee["id"], day, "OFF") in variables]
+            target = int(specified["count"])
+            if relaxed:
+                below = model.new_int_var(0, len(employees), f"daily_rest_below_{day}_{specified['id']}")
+                above = model.new_int_var(0, len(employees), f"daily_rest_above_{day}_{specified['id']}")
+                model.add(sum(rests) + below - above == target)
+                hard_penalties.extend([below * 30, above * 30])
+            else:
+                model.add(sum(rests) == target)
 
     requested = request.get("requestedChange")
     if requested:
@@ -349,4 +358,3 @@ def solve_request(request: dict[str, Any]) -> dict[str, Any]:
         "assignments": [],
         "metrics": {"status": relaxed_name, "wallTimeMs": round((time.perf_counter() - started) * 1000)},
     }
-

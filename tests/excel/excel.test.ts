@@ -58,18 +58,36 @@ function sampleSchedule(): { config: ReturnType<typeof createDefaultConfig>; sch
 }
 
 describe('Excel 导入导出', () => {
-  it('排班 Excel 包含明细、统计、元数据和公式缓存结果', async () => {
+  it('排班 Excel 包含右侧岗位统计、底部每日统计和公式缓存结果', async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'schedule.xlsx');
     const { config, schedule } = sampleSchedule();
     await exportScheduleWorkbook(filePath, config, schedule);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
-    expect(workbook.getWorksheet('排班表')).toBeTruthy();
+    const sheet = workbook.getWorksheet('排班表')!;
+    expect(sheet).toBeTruthy();
     expect(workbook.getWorksheet('统计')).toBeTruthy();
-    const formula = workbook.getWorksheet('排班表')!.getCell(3, 34).value as ExcelJS.CellFormulaValue;
-    expect(formula.formula).toContain('COUNTIF');
-    expect(formula.result).toBe(1);
+    const dates = getMonthDates('2026-10');
+    const statisticsStartColumn = 3 + dates.length;
+    expect(sheet.getCell(2, statisticsStartColumn).value).toBe('早班天数');
+    const employeeFormula = sheet.getCell(3, statisticsStartColumn).value as ExcelJS.CellFormulaValue;
+    expect(employeeFormula.formula).toBe('COUNTIF(C3:AG3,"早班")');
+    expect(employeeFormula.result).toBe(30);
+
+    const summaryStartRow = 3 + config.employees.length;
+    expect(sheet.getCell(summaryStartRow, 2).value).toBe('休');
+    const restFormula = sheet.getCell(summaryStartRow, 3).value as ExcelJS.CellFormulaValue;
+    expect(restFormula.formula).toBe('COUNTIF(C$3:C$11,"休息")');
+    expect(restFormula.result).toBe(1);
+    const totalRow = summaryStartRow + config.positions.length + 1;
+    expect(sheet.getCell(totalRow, 2).value).toBe('总计');
+    const totalFormula = sheet.getCell(totalRow, 3).value as ExcelJS.CellFormulaValue;
+    expect(totalFormula.formula).toBe('COUNTA(C$3:C$11)');
+    expect(totalFormula.result).toBe(config.employees.length);
+    const positionTotalFormula = sheet.getCell(totalRow, statisticsStartColumn).value as ExcelJS.CellFormulaValue;
+    expect(positionTotalFormula.formula).toBe('SUM(AH$3:AH$11)');
+    expect(positionTotalFormula.result).toBe(92);
   });
 
   it('配置模板可以往返导入', async () => {
@@ -81,6 +99,31 @@ describe('Excel 导入导出', () => {
     expect(imported.employees).toHaveLength(config.employees.length);
     expect(imported.positions).toHaveLength(config.positions.length);
     expect(imported.positions[0]!.defaultMinQuota).toBe(config.positions[0]!.defaultMinQuota);
+  });
+
+  it('配置模板往返保留指定日期连续范围', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'config-range.xlsx');
+    const config = createDefaultConfig();
+    config.specifiedAssignments.push({
+      id: '10000000-0000-4000-8000-000000000021',
+      employeeId: config.employees[0]!.id,
+      date: '2026-10-03',
+      endDate: '2026-10-05',
+      state: 'OFF',
+      locked: true,
+    });
+    config.specifiedRestCounts.push({
+      id: '10000000-0000-4000-8000-000000000022',
+      date: '2026-10-08',
+      endDate: '2026-10-10',
+      count: 2,
+    });
+    await exportConfigurationTemplate(filePath, config);
+
+    const imported = await importConfigurationWorkbook(filePath);
+    expect(imported.specifiedAssignments[0]).toMatchObject({ date: '2026-10-03', endDate: '2026-10-05', state: 'OFF' });
+    expect(imported.specifiedRestCounts[0]).toMatchObject({ date: '2026-10-08', endDate: '2026-10-10', count: 2 });
   });
 
   it('导入时会将 Excel 中的非法 ID 规范化为 UUID', async () => {

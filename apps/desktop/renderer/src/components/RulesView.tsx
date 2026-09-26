@@ -1,4 +1,5 @@
 import type { ScheduleConfig, SoftConstraintKey } from '../../../../../packages/contracts/types';
+import { getMonthDates } from '../../../../../packages/domain/date';
 
 interface Props {
   config: ScheduleConfig;
@@ -11,6 +12,9 @@ const softLabels: Record<SoftConstraintKey, string> = {
 };
 
 export function RulesView({ config, targetMonth, onChange }: Props) {
+  const monthDates = getMonthDates(targetMonth);
+  const monthStart = monthDates[0]!;
+  const monthEnd = monthDates.at(-1)!;
   const setRuleNumber = (key: keyof ScheduleConfig['rules'], value: number) => onChange({ ...config, rules: { ...config.rules, [key]: value } });
   const updateGroup = (index: number, patch: Partial<ScheduleConfig['rules']['groups'][number]>) => onChange({
     ...config,
@@ -31,9 +35,22 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
     if (!employee) return;
     onChange({
       ...config,
-      specifiedAssignments: [...config.specifiedAssignments, { id: crypto.randomUUID(), employeeId: employee.id, date: `${targetMonth}-01`, state: 'OFF', locked: true }],
+      specifiedAssignments: [...config.specifiedAssignments, { id: crypto.randomUUID(), employeeId: employee.id, date: monthStart, endDate: monthStart, state: 'OFF', locked: true }],
     });
   };
+
+  const updateSpecifiedAssignmentStart = (index: number, date: string) => onChange({
+    ...config,
+    specifiedAssignments: config.specifiedAssignments.map((item, current) => current === index
+      ? { ...item, date, endDate: (item.endDate ?? item.date) < date ? date : (item.endDate ?? item.date) }
+      : item),
+  });
+  const updateSpecifiedRestStart = (index: number, date: string) => onChange({
+    ...config,
+    specifiedRestCounts: config.specifiedRestCounts.map((item, current) => current === index
+      ? { ...item, date, endDate: (item.endDate ?? item.date) < date ? date : (item.endDate ?? item.date) }
+      : item),
+  });
 
   return (
     <div className="view-stack">
@@ -105,15 +122,16 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
       </section>
 
       <section className="card">
-        <div className="section-heading"><div><p className="eyebrow">LOCKED DATES</p><h2>指定日期</h2><p>指定休息、岗位和审单在生成与智能调班中保持锁定。</p></div><div className="button-row"><button className="secondary-button" onClick={addSpecifiedAssignment}>新增员工指定</button><button className="secondary-button" onClick={() => onChange({ ...config, specifiedRestCounts: [...config.specifiedRestCounts, { id: crypto.randomUUID(), date: `${targetMonth}-01`, count: 1 }] })}>新增休息人数</button></div></div>
+        <div className="section-heading"><div><p className="eyebrow">LOCKED DATES</p><h2>指定日期</h2><p>开始和结束日期为闭区间，范围内每一天都会在生成与智能调班中保持锁定。</p></div><div className="button-row"><button className="secondary-button" onClick={addSpecifiedAssignment}>新增员工指定</button><button className="secondary-button" onClick={() => onChange({ ...config, specifiedRestCounts: [...config.specifiedRestCounts, { id: crypto.randomUUID(), date: monthStart, endDate: monthStart, count: 1 }] })}>新增休息人数</button></div></div>
         <div className="table-shell">
           <table className="editor-table">
-            <thead><tr><th>员工</th><th>日期</th><th>指定状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>员工</th><th>开始日期</th><th>结束日期</th><th>指定状态</th><th>操作</th></tr></thead>
             <tbody>
               {config.specifiedAssignments.map((value, index) => (
                 <tr key={value.id}>
                   <td><select value={value.employeeId} onChange={(event) => onChange({ ...config, specifiedAssignments: config.specifiedAssignments.map((item, current) => current === index ? { ...item, employeeId: event.target.value } : item) })}>{config.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></td>
-                  <td><input type="date" value={value.date} onChange={(event) => onChange({ ...config, specifiedAssignments: config.specifiedAssignments.map((item, current) => current === index ? { ...item, date: event.target.value } : item) })} /></td>
+                  <td><input aria-label="指定开始日期" type="date" min={monthStart} max={monthEnd} value={value.date} onChange={(event) => updateSpecifiedAssignmentStart(index, event.target.value)} /></td>
+                  <td><input aria-label="指定结束日期" type="date" min={value.date} max={monthEnd} value={value.endDate ?? value.date} onChange={(event) => onChange({ ...config, specifiedAssignments: config.specifiedAssignments.map((item, current) => current === index ? { ...item, endDate: event.target.value } : item) })} /></td>
                   <td><select value={value.state} onChange={(event) => onChange({ ...config, specifiedAssignments: config.specifiedAssignments.map((item, current) => current === index ? { ...item, state: event.target.value } : item) })}><option value="OFF">休息</option>{config.positions.map((position) => <option key={position.id} value={position.id}>{position.name}</option>)}</select></td>
                   <td><button className="text-button danger-text" onClick={() => onChange({ ...config, specifiedAssignments: config.specifiedAssignments.filter((_, current) => current !== index) })}>删除</button></td>
                 </tr>
@@ -121,7 +139,8 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
               {config.specifiedRestCounts.map((value, index) => (
                 <tr key={value.id}>
                   <td><span className="muted">全组休息人数</span></td>
-                  <td><input type="date" value={value.date} onChange={(event) => onChange({ ...config, specifiedRestCounts: config.specifiedRestCounts.map((item, current) => current === index ? { ...item, date: event.target.value } : item) })} /></td>
+                  <td><input aria-label="休息人数开始日期" type="date" min={monthStart} max={monthEnd} value={value.date} onChange={(event) => updateSpecifiedRestStart(index, event.target.value)} /></td>
+                  <td><input aria-label="休息人数结束日期" type="date" min={value.date} max={monthEnd} value={value.endDate ?? value.date} onChange={(event) => onChange({ ...config, specifiedRestCounts: config.specifiedRestCounts.map((item, current) => current === index ? { ...item, endDate: event.target.value } : item) })} /></td>
                   <td><input type="number" min="0" value={value.count} onChange={(event) => onChange({ ...config, specifiedRestCounts: config.specifiedRestCounts.map((item, current) => current === index ? { ...item, count: Number(event.target.value) } : item) })} /></td>
                   <td><button className="text-button danger-text" onClick={() => onChange({ ...config, specifiedRestCounts: config.specifiedRestCounts.filter((_, current) => current !== index) })}>删除</button></td>
                 </tr>

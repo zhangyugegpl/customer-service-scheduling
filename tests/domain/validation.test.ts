@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../../packages/contracts/defaultConfig';
 import type { Assignment, ScheduleResult } from '../../packages/contracts/types';
-import { getMonthDates, validateConfig, validateSchedule } from '../../packages/domain';
+import { getDateRange, getMonthDates, validateConfig, validateSchedule } from '../../packages/domain';
 
 describe('配置预检查', () => {
   it('默认配置仅提示缺少跨月边界，不产生阻断错误', () => {
@@ -27,6 +27,32 @@ describe('配置预检查', () => {
     );
     const issues = validateConfig(config, '2026-10');
     expect(issues.some((value) => value.code === 'SPECIFIED_ASSIGNMENT_CONFLICT')).toBe(true);
+  });
+
+  it('连续日期范围会展开为闭区间并识别重叠冲突', () => {
+    expect(getDateRange('2026-10-03', '2026-10-05')).toEqual(['2026-10-03', '2026-10-04', '2026-10-05']);
+    const config = createDefaultConfig();
+    const employee = config.employees[0]!;
+    config.specifiedAssignments.push(
+      { id: '10000000-0000-4000-8000-000000000011', employeeId: employee.id, date: '2026-10-03', endDate: '2026-10-05', state: 'OFF', locked: true },
+      { id: '10000000-0000-4000-8000-000000000012', employeeId: employee.id, date: '2026-10-05', endDate: '2026-10-07', state: config.positions[0]!.id, locked: true },
+    );
+    const issues = validateConfig(config, '2026-10');
+    expect(issues.some((value) => value.code === 'SPECIFIED_ASSIGNMENT_CONFLICT' && value.date === '2026-10-05')).toBe(true);
+  });
+
+  it('拒绝结束日期早于开始日期的指定范围', () => {
+    const config = createDefaultConfig();
+    config.specifiedAssignments.push({
+      id: '10000000-0000-4000-8000-000000000013',
+      employeeId: config.employees[0]!.id,
+      date: '2026-10-08',
+      endDate: '2026-10-06',
+      state: 'OFF',
+      locked: true,
+    });
+    const issues = validateConfig(config, '2026-10');
+    expect(issues.some((value) => value.code === 'SPECIFIED_DATE_RANGE_INVALID')).toBe(true);
   });
 });
 

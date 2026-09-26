@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AssignmentState, ScheduleConfig, ScheduleResult } from '../../../../../packages/contracts/types';
-import { formatChineseDate, getMonthDates } from '../../../../../packages/domain/date';
+import { formatChineseDate, getMonthDates, isDateInRange } from '../../../../../packages/domain/date';
+import { buildScheduleStatistics } from '../../../../../packages/domain/statistics';
 import { IssueList } from './IssueList';
 
 interface Props {
@@ -20,13 +21,29 @@ const statusLabels: Record<ScheduleResult['status'], string> = {
   PUBLISHABLE: '可发布', EXCEPTION: '有例外', INFEASIBLE: '无可行方案', TIMEOUT: '求解超时',
 };
 
+function shortStateLabel(label: string): string {
+  return label.endsWith('班') ? label.slice(0, -1) : label;
+}
+
 export function ScheduleView({ config, schedule, preflightIssues, busy, onGenerate, onSave, onExport, onForceChange, onSmartRepair, onExceptionReason }: Props) {
   const [selected, setSelected] = useState<{ employeeId: string; date: string; state: AssignmentState }>();
   const [targetState, setTargetState] = useState<AssignmentState>('OFF');
   const [reason, setReason] = useState('');
-  const dates = schedule ? getMonthDates(schedule.targetMonth) : [];
+  const dates = useMemo(() => schedule ? getMonthDates(schedule.targetMonth) : [], [schedule?.targetMonth]);
+  const activeEmployees = useMemo(() => config.employees.filter((employee) => employee.active), [config.employees]);
   const assignmentMap = useMemo(() => new Map(schedule?.assignments.map((value) => [`${value.employeeId}|${value.date}`, value.state]) ?? []), [schedule]);
   const issueKeys = useMemo(() => new Set(schedule?.issues.filter((value) => value.severity === 'ERROR' && value.employeeId && value.date).map((value) => `${value.employeeId}|${value.date}`) ?? []), [schedule]);
+  const statistics = useMemo(() => buildScheduleStatistics(
+    schedule?.assignments ?? [],
+    activeEmployees.map((employee) => employee.id),
+    dates,
+    config.positions.map((position) => position.id),
+  ), [activeEmployees, config.positions, dates, schedule?.assignments]);
+  const summaryRows = useMemo(() => [
+    { label: '休', state: 'OFF' as AssignmentState },
+    ...config.positions.map((position) => ({ label: shortStateLabel(position.name), state: position.id as AssignmentState })),
+    { label: '总计', state: undefined },
+  ], [config.positions]);
 
   const openCell = (employeeId: string, date: string) => {
     const state = assignmentMap.get(`${employeeId}|${date}`) ?? 'OFF';
@@ -73,16 +90,16 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
           <div className="section-heading"><div><p className="eyebrow">SCHEDULE GRID</p><h2>月度排班表</h2><p>点击任意单元格进行强制修改或智能调班。</p></div><div className="legend"><span className="legend-item off">休息</span>{config.positions.map((position) => <span className="legend-item" style={{ background: position.color }} key={position.id}>{position.name}</span>)}</div></div>
           <div className="schedule-scroll">
             <table className="schedule-table">
-              <thead><tr><th className="sticky-col employee-col">员工</th><th className="sticky-col code-col">编号</th>{dates.map((date) => <th key={date}>{formatChineseDate(date)}</th>)}</tr></thead>
+              <thead><tr><th className="sticky-col employee-col">员工</th><th className="sticky-col code-col">编号</th>{dates.map((date) => <th key={date}>{formatChineseDate(date)}</th>)}{config.positions.map((position) => <th className="summary-col" key={position.id}>{shortStateLabel(position.name)}</th>)}</tr></thead>
               <tbody>
-                {config.employees.filter((employee) => employee.active).map((employee) => (
+                {activeEmployees.map((employee) => (
                   <tr key={employee.id}>
                     <th className="sticky-col employee-col">{employee.name}</th>
                     <td className="sticky-col code-col">{employee.code}</td>
                     {dates.map((date) => {
                       const state = assignmentMap.get(`${employee.id}|${date}`) ?? 'OFF';
                       const position = config.positions.find((value) => value.id === state);
-                      const locked = config.specifiedAssignments.some((value) => value.employeeId === employee.id && value.date === date);
+                      const locked = config.specifiedAssignments.some((value) => value.employeeId === employee.id && isDateInRange(date, value.date, value.endDate ?? value.date));
                       return (
                         <td key={date} className={issueKeys.has(`${employee.id}|${date}`) ? 'cell-error' : ''}>
                           <button
@@ -94,9 +111,29 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
                         </td>
                       );
                     })}
+                    {config.positions.map((position) => <td className="summary-cell" key={position.id}>{statistics.byEmployee[employee.id]?.[position.id] ?? 0}</td>)}
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                {summaryRows.map((summaryRow) => (
+                  <tr key={summaryRow.label}>
+                    <th className="sticky-col employee-col schedule-summary-label">统计</th>
+                    <th className="sticky-col code-col schedule-summary-state">{summaryRow.label}</th>
+                    {dates.map((date) => {
+                      const daily = statistics.byDate[date] ?? {};
+                      const value = summaryRow.state
+                        ? daily[summaryRow.state] ?? 0
+                        : Object.values(daily).reduce((sum, count) => sum + count, 0);
+                      return <td className="daily-summary-cell" key={date}>{value}</td>;
+                    })}
+                    {config.positions.map((position) => {
+                      const total = activeEmployees.reduce((sum, employee) => sum + (statistics.byEmployee[employee.id]?.[position.id] ?? 0), 0);
+                      return <td className="summary-cell summary-total-cell" key={position.id}>{summaryRow.state ? '—' : total}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tfoot>
             </table>
           </div>
         </section>
@@ -121,4 +158,3 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
     </div>
   );
 }
-

@@ -31,6 +31,23 @@ export function addDays(date: ISODate, days: number): ISODate {
   return value.toISOString().slice(0, 10);
 }
 
+export function getDateRange(startDate: ISODate, endDate: ISODate = startDate): ISODate[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    throw new Error('日期范围必须使用 YYYY-MM-DD 格式。');
+  }
+  if (toUtcDate(startDate).toISOString().slice(0, 10) !== startDate || toUtcDate(endDate).toISOString().slice(0, 10) !== endDate) {
+    throw new Error('日期范围包含无效日期。');
+  }
+  if (endDate < startDate) throw new Error('结束日期不能早于开始日期。');
+  const result: ISODate[] = [];
+  for (let date = startDate; date <= endDate; date = addDays(date, 1)) result.push(date);
+  return result;
+}
+
+export function isDateInRange(date: ISODate, startDate: ISODate, endDate: ISODate = startDate): boolean {
+  return date >= startDate && date <= endDate;
+}
+
 export function mondayOfWeek(date: ISODate): ISODate {
   const value = toUtcDate(date);
   const day = value.getUTCDay() || 7;
@@ -51,4 +68,3 @@ export function formatChineseDate(date: ISODate): string {
   const week = ['日', '一', '二', '三', '四', '五', '六'][value.getUTCDay()];
   return `${value.getUTCMonth() + 1}/${value.getUTCDate()} 周${week}`;
 }
-

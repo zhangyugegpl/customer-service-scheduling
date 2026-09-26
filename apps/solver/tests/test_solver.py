@@ -55,6 +55,26 @@ class SolverTest(unittest.TestCase):
         assignment = next(value for value in result["assignments"] if value["employeeId"] == employee_id and value["date"] == "2026-02-01")
         self.assertEqual(assignment["state"], "OFF")
 
+    def test_specified_date_range_locks_every_day(self) -> None:
+        request = self.build_request()
+        employee_id = request["config"]["employees"][0]["id"]
+        request["config"]["employees"][0]["monthlyRestDays"] = 3
+        request["config"]["specifiedAssignments"] = [{
+            "id": "10000000-0000-4000-8000-000000000001",
+            "employeeId": employee_id,
+            "date": "2026-02-03",
+            "endDate": "2026-02-05",
+            "state": "OFF",
+            "locked": True,
+        }]
+        result = solve_request(request)
+        locked = {
+            value["date"]: value["state"]
+            for value in result["assignments"]
+            if value["employeeId"] == employee_id and "2026-02-03" <= value["date"] <= "2026-02-05"
+        }
+        self.assertEqual(locked, {"2026-02-03": "OFF", "2026-02-04": "OFF", "2026-02-05": "OFF"})
+
 
 if __name__ == "__main__":
     unittest.main()

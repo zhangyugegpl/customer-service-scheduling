@@ -10,6 +10,7 @@ import type {
   ValidationIssue,
 } from '../contracts/types';
 import { getMonthDates, previousMonth } from '../domain/date';
+import { buildScheduleStatistics } from '../domain/statistics';
 
 const TEMPLATE_VERSION = '1.0.0';
 const HEADER_FILL = 'FF1F4E78';
@@ -49,6 +50,10 @@ function styleHeader(row: ExcelJS.Row): void {
 function stateLabel(config: ScheduleConfig, state: string): string {
   if (state === 'OFF') return '休息';
   return config.positions.find((position) => position.id === state)?.name ?? '未知岗位';
+}
+
+function shortStateLabel(label: string): string {
+  return label.endsWith('班') ? label.slice(0, -1) : label;
 }
 
 function readText(cell: ExcelJS.Cell): string {
@@ -97,7 +102,15 @@ export async function exportScheduleWorkbook(
   const dates = getMonthDates(schedule.targetMonth);
   const activeEmployees = config.employees.filter((employee) => employee.active);
   const statisticsStartColumn = 3 + dates.length;
-  const finalColumn = statisticsStartColumn + config.positions.length;
+  const finalColumn = statisticsStartColumn + config.positions.length - 1;
+  const employeeStartRow = 3;
+  const employeeEndRow = 2 + activeEmployees.length;
+  const statistics = buildScheduleStatistics(
+    schedule.assignments,
+    activeEmployees.map((employee) => employee.id),
+    dates,
+    config.positions.map((position) => position.id),
+  );
   sheet.mergeCells(1, 1, 1, finalColumn);
   const title = sheet.getCell(1, 1);
   title.value = `${schedule.targetMonth} 客服排班表${schedule.status === 'EXCEPTION' ? '（例外方案）' : ''}`;
@@ -105,7 +118,7 @@ export async function exportScheduleWorkbook(
   title.alignment = { horizontal: 'center', vertical: 'middle' };
   sheet.getRow(1).height = 32;
 
-  const headers = ['员工编号', '员工姓名', ...dates, '休息天数', ...config.positions.map((position) => `${position.name}天数`)];
+  const headers = ['员工编号', '员工姓名', ...dates, ...config.positions.map((position) => `${position.name}天数`)];
   sheet.addRow(headers);
   styleHeader(sheet.getRow(2));
   sheet.getColumn(1).width = 13;
@@ -133,11 +146,9 @@ export async function exportScheduleWorkbook(
     });
     const dateStart = `${columnName(3)}${rowNumber}`;
     const dateEnd = `${columnName(2 + dates.length)}${rowNumber}`;
-    const restCount = schedule.assignments.filter((assignment) => assignment.employeeId === employee.id && assignment.state === 'OFF').length;
-    row.getCell(statisticsStartColumn).value = { formula: `COUNTIF(${dateStart}:${dateEnd},"休息")`, result: restCount };
     config.positions.forEach((position, positionIndex) => {
-      const count = schedule.assignments.filter((assignment) => assignment.employeeId === employee.id && assignment.state === position.id).length;
-      row.getCell(statisticsStartColumn + positionIndex + 1).value = {
+      const count = statistics.byEmployee[employee.id]?.[position.id] ?? 0;
+      row.getCell(statisticsStartColumn + positionIndex).value = {
         formula: `COUNTIF(${dateStart}:${dateEnd},"${position.name.replaceAll('"', '""')}")`,
         result: count,
       };
@@ -145,9 +156,46 @@ export async function exportScheduleWorkbook(
     for (let index = 1; index <= finalColumn; index += 1) row.getCell(index).border = BORDER;
   });
 
+  const summaryRows = [
+    { label: '休', state: 'OFF' },
+    ...config.positions.map((position) => ({ label: shortStateLabel(position.name), state: position.id })),
+    { label: '总计', state: undefined },
+  ];
+  summaryRows.forEach((summaryRow, summaryIndex) => {
+    const rowNumber = employeeEndRow + summaryIndex + 1;
+    const row = sheet.getRow(rowNumber);
+    row.getCell(2).value = summaryRow.label;
+    row.getCell(2).font = { bold: true, color: { argb: 'FF17324D' } };
+    row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+    dates.forEach((date, dateIndex) => {
+      const column = dateIndex + 3;
+      const columnLetter = columnName(column);
+      const result = summaryRow.state
+        ? statistics.byDate[date]?.[summaryRow.state] ?? 0
+        : activeEmployees.length;
+      row.getCell(column).value = summaryRow.state
+        ? { formula: `COUNTIF(${columnLetter}$${employeeStartRow}:${columnLetter}$${employeeEndRow},"${stateLabel(config, summaryRow.state).replaceAll('"', '""')}")`, result }
+        : { formula: `COUNTA(${columnLetter}$${employeeStartRow}:${columnLetter}$${employeeEndRow})`, result };
+      row.getCell(column).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+    config.positions.forEach((position, positionIndex) => {
+      const column = statisticsStartColumn + positionIndex;
+      if (summaryRow.state === undefined) {
+        const columnLetter = columnName(column);
+        const result = activeEmployees.reduce((sum, employee) => sum + (statistics.byEmployee[employee.id]?.[position.id] ?? 0), 0);
+        row.getCell(column).value = { formula: `SUM(${columnLetter}$${employeeStartRow}:${columnLetter}$${employeeEndRow})`, result };
+        row.getCell(column).alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+    });
+    for (let index = 1; index <= finalColumn; index += 1) {
+      row.getCell(index).border = BORDER;
+      row.getCell(index).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: summaryRow.state ? 'FFF8FAFB' : 'FFE8F2F1' } };
+    }
+  });
+
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2 + activeEmployees.length, column: finalColumn } };
   sheet.pageSetup.printTitlesRow = '1:2';
-  sheet.pageSetup.printArea = `A1:${columnName(finalColumn)}${2 + activeEmployees.length}`;
+  sheet.pageSetup.printArea = `A1:${columnName(finalColumn)}${employeeEndRow + summaryRows.length}`;
 
   const summary = workbook.addWorksheet('统计');
   summary.addRow(['指标', '值']);
@@ -261,18 +309,19 @@ export async function exportConfigurationTemplate(filePath: string, config: Sche
   }
 
   const specified = workbook.addWorksheet('指定日期');
-  specified.addRow(['规则ID', '员工编号', '日期', '指定类型', '岗位/人数']);
+  specified.addRow(['规则ID', '员工编号', '开始日期', '结束日期', '指定类型', '岗位/人数']);
   styleHeader(specified.getRow(1));
   for (const value of config.specifiedAssignments) {
     specified.addRow([
       value.id,
       config.employees.find((employee) => employee.id === value.employeeId)?.code ?? '',
       value.date,
+      value.endDate ?? value.date,
       value.state === 'OFF' ? '休息' : '岗位',
       value.state === 'OFF' ? '' : config.positions.find((position) => position.id === value.state)?.name ?? '',
     ]);
   }
-  for (const value of config.specifiedRestCounts) specified.addRow([value.id, '', value.date, '指定休息人数', value.count]);
+  for (const value of config.specifiedRestCounts) specified.addRow([value.id, '', value.date, value.endDate ?? value.date, '指定休息人数', value.count]);
   metadataSheet(workbook, { templateVersion: TEMPLATE_VERSION, schemaVersion: config.schemaVersion, configId: config.id });
   for (const sheet of workbook.worksheets.filter((candidate) => candidate.name !== '元数据')) {
     sheet.columns.forEach((column) => { column.width = Math.max(14, Math.min(42, column.width ?? 14)); });
@@ -361,17 +410,21 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
   base.specifiedAssignments = [];
   base.specifiedRestCounts = [];
   const specifiedSheet = workbook.getWorksheet('指定日期');
+  const hasRangeColumn = specifiedSheet ? readText(specifiedSheet.getCell(1, 4)) === '结束日期' : false;
   specifiedSheet?.eachRow((row, number) => {
     if (number === 1) return;
-    const type = readText(row.getCell(4));
     const day = readText(row.getCell(3));
+    const endDay = hasRangeColumn ? readText(row.getCell(4)) || day : day;
+    const typeColumn = hasRangeColumn ? 5 : 4;
+    const valueColumn = hasRangeColumn ? 6 : 5;
+    const type = readText(row.getCell(typeColumn));
     const id = readUuidOrCreate(row.getCell(1));
-    if (type === '指定休息人数') base.specifiedRestCounts.push({ id, date: day, count: parseInteger(readText(row.getCell(5))) });
+    if (type === '指定休息人数') base.specifiedRestCounts.push({ id, date: day, endDate: endDay, count: parseInteger(readText(row.getCell(valueColumn))) });
     else {
       const employee = employeeByCode.get(readText(row.getCell(2)));
       if (!employee) return;
-      const state = type === '休息' ? 'OFF' : positionByName.get(readText(row.getCell(5)))?.id;
-      if (state) base.specifiedAssignments.push({ id, employeeId: employee.id, date: day, state, locked: true });
+      const state = type === '休息' ? 'OFF' : positionByName.get(readText(row.getCell(valueColumn)))?.id;
+      if (state) base.specifiedAssignments.push({ id, employeeId: employee.id, date: day, endDate: endDay, state, locked: true });
     }
   });
   return base;

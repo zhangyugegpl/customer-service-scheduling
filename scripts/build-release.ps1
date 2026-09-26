@@ -14,6 +14,21 @@ function Invoke-Checked {
   if ($LASTEXITCODE -ne 0) { throw "$Label 失败，退出码：$LASTEXITCODE" }
 }
 
+function Get-Sha256 {
+  param([string]$Path)
+
+  # 某些精简版 PowerShell 不提供 Get-FileHash，使用 certutil 作为兼容回退。
+  if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) {
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+  }
+
+  $Output = & certutil.exe -hashfile $Path SHA256 2>$null
+  if ($LASTEXITCODE -ne 0 -or $Output.Count -lt 2) {
+    throw "无法计算文件 SHA-256：$Path"
+  }
+  return (($Output | Select-Object -Index 1).Trim() -replace '\s', '').ToUpperInvariant()
+}
+
 Push-Location $ProjectRoot
 try {
   if (-not (Test-Path 'node_modules')) { throw '缺少 Node.js 依赖，请先运行 scripts/setup.cmd。' }
@@ -29,7 +44,7 @@ try {
   $Artifacts = @(Get-ChildItem 'release' -File | Where-Object { $_.Extension -in '.exe', '.zip' })
   if ($Artifacts.Count -lt 2) { throw '发布目录中未同时找到 EXE 与 ZIP。' }
   $ChecksumLines = $Artifacts | ForEach-Object {
-    $Hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash
+    $Hash = Get-Sha256 $_.FullName
     "$Hash  $($_.Name)"
   }
   $ChecksumLines | Set-Content -Path 'release/SHA256SUMS.txt' -Encoding UTF8

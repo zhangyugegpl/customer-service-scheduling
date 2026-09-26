@@ -37,6 +37,10 @@ try {
   await page.waitForSelector('.status-banner.publishable', { timeout: 30_000 });
   await page.waitForSelector('.schedule-table tbody tr', { timeout: 10_000 });
   assert.equal(await page.locator('.schedule-table tbody tr').count(), 9);
+  assert.equal(await page.locator('.schedule-table thead .summary-col').count(), 4);
+  assert.equal(await page.locator('.schedule-table tfoot tr').count(), 6);
+  await page.locator('.schedule-scroll').evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+  await page.locator('.schedule-card').screenshot({ path: path.join(outputDirectory, 'e2e-schedule-statistics.png') });
 
   await page.getByRole('button', { name: '保存版本' }).click();
   await page.waitForSelector('.toast.success', { timeout: 10_000 });
@@ -46,8 +50,20 @@ try {
 
   await page.getByRole('button', { name: '打开' }).first().click();
   await page.waitForSelector('.schedule-table');
+  await page.screenshot({ path: path.join(outputDirectory, 'e2e-schedule-viewport.png') });
   await page.screenshot({ path: path.join(outputDirectory, 'e2e-schedule.png'), fullPage: true });
-  process.stdout.write('E2E_OK：启动 → 选择月份 → 生成排班 → 查看排班 → 保存版本 → 打开历史，全部通过。\n');
+
+  await page.getByRole('button', { name: /排班规则/ }).click();
+  await page.getByRole('button', { name: '新增员工指定' }).click();
+  const specifiedRow = page.locator('.editor-table tbody tr').first();
+  await specifiedRow.getByLabel('指定开始日期').fill('2026-10-03');
+  await specifiedRow.getByLabel('指定结束日期').fill('2026-10-05');
+  assert.equal(await specifiedRow.getByLabel('指定开始日期').inputValue(), '2026-10-03');
+  assert.equal(await specifiedRow.getByLabel('指定结束日期').inputValue(), '2026-10-05');
+  await page.locator('.editor-table').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(outputDirectory, 'e2e-rules-date-range-viewport.png') });
+  await page.screenshot({ path: path.join(outputDirectory, 'e2e-rules-date-range.png'), fullPage: true });
+  process.stdout.write('E2E_OK：生成排班 → 统计看板 → 保存版本 → 打开历史 → 连续日期指定，全部通过。\n');
 } finally {
   if (electronApp) await electronApp.close();
   await rm(dataDirectory, { recursive: true, force: true });

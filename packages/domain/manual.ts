@@ -1,4 +1,5 @@
 import type { AssignmentState, ScheduleConfig, ScheduleResult } from '../contracts/types';
+import { isDateInRange } from './date';
 import { computeSoftScores } from './scoring';
 import { validateSchedule } from './validation';
 
@@ -12,7 +13,7 @@ export function forceAssignmentChange(
 ): ScheduleResult {
   const existing = schedule.assignments.find((assignment) => assignment.employeeId === employeeId && assignment.date === date);
   if (!existing) throw new Error('未找到要调整的排班单元格。');
-  const locked = config.specifiedAssignments.find((assignment) => assignment.employeeId === employeeId && assignment.date === date);
+  const locked = config.specifiedAssignments.find((assignment) => assignment.employeeId === employeeId && isDateInRange(date, assignment.date, assignment.endDate ?? assignment.date));
   if (locked) throw new Error('该单元格已被指定日期规则锁定，请先解除对应规则。');
   const assignments = schedule.assignments.map((assignment) => assignment === existing ? { ...assignment, state } : assignment);
   const issues = validateSchedule(config, { targetMonth: schedule.targetMonth, assignments });

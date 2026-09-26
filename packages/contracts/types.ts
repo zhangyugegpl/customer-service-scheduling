@@ -69,6 +69,7 @@ export interface SpecifiedAssignment {
   id: UUID;
   employeeId: EmployeeId;
   date: ISODate;
+  endDate?: ISODate;
   state: AssignmentState;
   locked: true;
 }
@@ -76,6 +77,7 @@ export interface SpecifiedAssignment {
 export interface SpecifiedRestCount {
   id: UUID;
   date: ISODate;
+  endDate?: ISODate;
   count: number;
 }
 

@@ -10,7 +10,7 @@ import type {
   ValidationIssue,
   YearMonth,
 } from '../contracts/types';
-import { getMonthDates, isDateInMonth, previousMonth } from './date';
+import { getDateRange, getMonthDates, isDateInMonth, isDateInRange, previousMonth } from './date';
 
 function issue(input: Omit<ValidationIssue, 'sourceIds'> & { sourceIds?: string[] }): ValidationIssue {
   return { sourceIds: [], ...input };
@@ -165,17 +165,26 @@ export function validateConfig(
 
   const specifiedByEmployeeDate = new Map<string, typeof config.specifiedAssignments>();
   for (const assignment of config.specifiedAssignments) {
-    const key = `${assignment.employeeId}|${assignment.date}`;
-    const values = specifiedByEmployeeDate.get(key) ?? [];
-    values.push(assignment);
-    specifiedByEmployeeDate.set(key, values);
     const employee = config.employees.find((candidate) => candidate.id === assignment.employeeId);
     if (!employee) {
       issues.push(issue({ code: 'SPECIFIED_EMPLOYEE_NOT_FOUND', severity: 'ERROR', date: assignment.date, sourceIds: [assignment.id, assignment.employeeId], message: '指定日期引用了不存在的员工。' }));
       continue;
     }
-    if (!isDateInMonth(assignment.date, targetMonth)) {
-      issues.push(issue({ code: 'SPECIFIED_DATE_OUTSIDE_MONTH', severity: 'ERROR', employeeId: employee.id, date: assignment.date, sourceIds: [assignment.id], message: `指定日期 ${assignment.date} 不属于目标月。` }));
+    let lockedDates: ISODate[];
+    try {
+      lockedDates = getDateRange(assignment.date, assignment.endDate ?? assignment.date);
+    } catch (error) {
+      issues.push(issue({ code: 'SPECIFIED_DATE_RANGE_INVALID', severity: 'ERROR', employeeId: employee.id, date: assignment.date, sourceIds: [assignment.id], message: `指定日期范围无效：${String(error)}` }));
+      continue;
+    }
+    for (const date of lockedDates) {
+      const key = `${assignment.employeeId}|${date}`;
+      const values = specifiedByEmployeeDate.get(key) ?? [];
+      values.push(assignment);
+      specifiedByEmployeeDate.set(key, values);
+      if (!isDateInMonth(date, targetMonth)) {
+        issues.push(issue({ code: 'SPECIFIED_DATE_OUTSIDE_MONTH', severity: 'ERROR', employeeId: employee.id, date, sourceIds: [assignment.id], message: `指定日期 ${date} 不属于目标月。` }));
+      }
     }
     if (assignment.state !== 'OFF') {
       const position = config.positions.find((candidate) => candidate.id === assignment.state);
@@ -186,37 +195,46 @@ export function validateConfig(
       }
     }
   }
-  for (const values of specifiedByEmployeeDate.values()) {
+  for (const [key, values] of specifiedByEmployeeDate) {
     if (new Set(values.map((value) => value.state)).size > 1) {
       const first = values[0]!;
-      issues.push(issue({ code: 'SPECIFIED_ASSIGNMENT_CONFLICT', severity: 'ERROR', employeeId: first.employeeId, date: first.date, sourceIds: values.map((value) => value.id), message: '同一员工同一天存在互相矛盾的指定状态。' }));
+      issues.push(issue({ code: 'SPECIFIED_ASSIGNMENT_CONFLICT', severity: 'ERROR', employeeId: first.employeeId, date: key.slice(key.indexOf('|') + 1), sourceIds: values.map((value) => value.id), message: '同一员工同一天存在互相矛盾的指定状态。' }));
     }
   }
 
   const restCountsByDate = new Map<string, typeof config.specifiedRestCounts>();
   for (const value of config.specifiedRestCounts) {
-    const values = restCountsByDate.get(value.date) ?? [];
-    values.push(value);
-    restCountsByDate.set(value.date, values);
-    if (!isDateInMonth(value.date, targetMonth)) {
-      issues.push(issue({ code: 'SPECIFIED_REST_DATE_OUTSIDE_MONTH', ruleId: 'H8', severity: 'ERROR', date: value.date, sourceIds: [value.id], message: `指定休息人数日期 ${value.date} 不属于目标月。` }));
+    let specifiedDates: ISODate[];
+    try {
+      specifiedDates = getDateRange(value.date, value.endDate ?? value.date);
+    } catch (error) {
+      issues.push(issue({ code: 'SPECIFIED_REST_DATE_RANGE_INVALID', ruleId: 'H8', severity: 'ERROR', date: value.date, sourceIds: [value.id], message: `指定休息人数日期范围无效：${String(error)}` }));
       continue;
     }
-    const fixedOff = config.specifiedAssignments.filter((assignment) => assignment.date === value.date && assignment.state === 'OFF').length;
-    const minWorkers = config.positions.reduce((sum, position) => sum + quotaFor(position, value.date), 0);
-    const maxOff = Math.max(0, employees.length - minWorkers);
-    if (value.count < fixedOff || value.count > maxOff) {
-      issues.push(issue({ code: 'SPECIFIED_REST_COUNT_IMPOSSIBLE', ruleId: 'H8', severity: 'ERROR', date: value.date, expected: `${fixedOff}～${maxOff}`, actual: value.count, sourceIds: [value.id], message: `${value.date} 指定休息 ${value.count} 人，不在可行范围 ${fixedOff}～${maxOff}。` }));
+    for (const date of specifiedDates) {
+      const values = restCountsByDate.get(date) ?? [];
+      values.push(value);
+      restCountsByDate.set(date, values);
+      if (!isDateInMonth(date, targetMonth)) {
+        issues.push(issue({ code: 'SPECIFIED_REST_DATE_OUTSIDE_MONTH', ruleId: 'H8', severity: 'ERROR', date, sourceIds: [value.id], message: `指定休息人数日期 ${date} 不属于目标月。` }));
+        continue;
+      }
+      const fixedOff = config.specifiedAssignments.filter((assignment) => assignment.state === 'OFF' && isDateInRange(date, assignment.date, assignment.endDate ?? assignment.date)).length;
+      const minWorkers = config.positions.reduce((sum, position) => sum + quotaFor(position, date), 0);
+      const maxOff = Math.max(0, employees.length - minWorkers);
+      if (value.count < fixedOff || value.count > maxOff) {
+        issues.push(issue({ code: 'SPECIFIED_REST_COUNT_IMPOSSIBLE', ruleId: 'H8', severity: 'ERROR', date, expected: `${fixedOff}～${maxOff}`, actual: value.count, sourceIds: [value.id], message: `${date} 指定休息 ${value.count} 人，不在可行范围 ${fixedOff}～${maxOff}。` }));
+      }
     }
   }
-  for (const values of restCountsByDate.values()) {
+  for (const [date, values] of restCountsByDate) {
     if (new Set(values.map((value) => value.count)).size > 1) {
-      issues.push(issue({ code: 'SPECIFIED_REST_COUNT_CONFLICT', ruleId: 'H8', severity: 'ERROR', date: values[0]!.date, sourceIds: values.map((value) => value.id), message: '同一日期配置了不同的指定休息人数。' }));
+      issues.push(issue({ code: 'SPECIFIED_REST_COUNT_CONFLICT', ruleId: 'H8', severity: 'ERROR', date, sourceIds: values.map((value) => value.id), message: '同一日期配置了不同的指定休息人数。' }));
     }
   }
 
   for (const date of dates) {
-    const fixedOffIds = new Set(config.specifiedAssignments.filter((assignment) => assignment.date === date && assignment.state === 'OFF').map((assignment) => assignment.employeeId));
+    const fixedOffIds = new Set(config.specifiedAssignments.filter((assignment) => assignment.state === 'OFF' && isDateInRange(date, assignment.date, assignment.endDate ?? assignment.date)).map((assignment) => assignment.employeeId));
     for (const group of config.rules.groups) {
       const off = group.employeeIds.filter((id) => fixedOffIds.has(id));
       if (off.length > 1) {
@@ -304,7 +322,7 @@ export function validateSchedule(config: ScheduleConfig, schedule: Pick<Schedule
         issues.push(issue({ code: 'PAIR_REST_VIOLATION', ruleId: 'H5', severity: 'ERROR', date, sourceIds: [pair.id], message: `${date} 互斥对“${pair.name}”同时休息。` }));
       }
     }
-    const specified = config.specifiedRestCounts.find((value) => value.date === date);
+    const specified = config.specifiedRestCounts.find((value) => isDateInRange(date, value.date, value.endDate ?? value.date));
     if (specified && offIds.size !== specified.count) {
       issues.push(issue({ code: 'SPECIFIED_REST_COUNT_VIOLATION', ruleId: 'H8', severity: 'ERROR', date, expected: specified.count, actual: offIds.size, sourceIds: [specified.id], message: `${date} 实际休息 ${offIds.size} 人，与指定 ${specified.count} 人不符。` }));
     }
@@ -318,10 +336,18 @@ export function validateSchedule(config: ScheduleConfig, schedule: Pick<Schedule
   }
 
   for (const locked of config.specifiedAssignments) {
-    const actual = valuesByKey.get(assignmentKey(locked.employeeId, locked.date))?.[0]?.state;
-    if (actual !== locked.state) {
-      const position = locked.state === 'OFF' ? undefined : positionMap.get(locked.state);
-      issues.push(issue({ code: 'LOCKED_ASSIGNMENT_VIOLATION', ruleId: locked.state === 'OFF' ? 'H6' : position?.name.includes('审单') ? 'H9' : 'H7', severity: 'ERROR', employeeId: locked.employeeId, date: locked.date, expected: locked.state, actual: actual ?? '缺失', sourceIds: [locked.id], message: `${locked.date} 的锁定状态未满足。` }));
+    let lockedDates: ISODate[] = [];
+    try {
+      lockedDates = getDateRange(locked.date, locked.endDate ?? locked.date);
+    } catch {
+      continue;
+    }
+    for (const date of lockedDates) {
+      const actual = valuesByKey.get(assignmentKey(locked.employeeId, date))?.[0]?.state;
+      if (actual !== locked.state) {
+        const position = locked.state === 'OFF' ? undefined : positionMap.get(locked.state);
+        issues.push(issue({ code: 'LOCKED_ASSIGNMENT_VIOLATION', ruleId: locked.state === 'OFF' ? 'H6' : position?.name.includes('审单') ? 'H9' : 'H7', severity: 'ERROR', employeeId: locked.employeeId, date, expected: locked.state, actual: actual ?? '缺失', sourceIds: [locked.id], message: `${date} 的锁定状态未满足。` }));
+      }
     }
   }
 
@@ -333,4 +359,3 @@ export function activeEmployees(config: ScheduleConfig): Employee[] {
 }
 
 export { quotaFor };
-

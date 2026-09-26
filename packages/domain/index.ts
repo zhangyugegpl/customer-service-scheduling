@@ -3,3 +3,4 @@ export * from './validation';
 export * from './scoring';
 export * from './boundary';
 export * from './manual';
+export * from './statistics';
