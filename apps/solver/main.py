@@ -7,6 +7,12 @@ import traceback
 
 from model import SOLVER_VERSION, solve_request
 
+# Windows GUI 进程没有可靠的控制台代码页；协议固定使用 UTF-8，避免中文岗位名被按 GBK 解码。
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 
 def write_json(value: object) -> None:
     sys.stdout.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
@@ -40,4 +46,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

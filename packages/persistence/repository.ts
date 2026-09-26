@@ -15,7 +15,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
-import { createDefaultConfig } from '../contracts/defaultConfig';
+import { createDefaultConfig, CURRENT_TEMPLATE_VERSION } from '../contracts/defaultConfig';
 import { boundaryStateSchema, scheduleConfigSchema } from '../contracts/schemas';
 import type {
   BoundaryState,
@@ -137,11 +137,11 @@ export class DataRepository {
     const raw = JSON.parse(await readFile(path.join(this.dataDirectory, manifest.activeConfigPath), 'utf8')) as unknown;
     const parsed = scheduleConfigSchema.safeParse(raw);
     if (!parsed.success) throw new Error(`当前配置损坏：${parsed.error.issues.map((value) => value.message).join('；')}`);
-    return parsed.data as ScheduleConfig;
+    return { ...parsed.data, templateVersion: CURRENT_TEMPLATE_VERSION } as ScheduleConfig;
   }
 
   async saveConfig(config: ScheduleConfig): Promise<ScheduleConfig> {
-    const parsed = scheduleConfigSchema.parse({ ...config, updatedAt: new Date().toISOString() }) as ScheduleConfig;
+    const parsed = scheduleConfigSchema.parse({ ...config, templateVersion: CURRENT_TEMPLATE_VERSION, updatedAt: new Date().toISOString() }) as ScheduleConfig;
     const transactionId = randomUUID();
     const transactionDir = path.join(this.dataDirectory, 'transactions', transactionId);
     await mkdir(transactionDir, { recursive: true });

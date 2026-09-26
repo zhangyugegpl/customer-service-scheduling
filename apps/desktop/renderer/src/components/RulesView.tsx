@@ -16,6 +16,16 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
   const monthStart = monthDates[0]!;
   const monthEnd = monthDates.at(-1)!;
   const setRuleNumber = (key: keyof ScheduleConfig['rules'], value: number) => onChange({ ...config, rules: { ...config.rules, [key]: value } });
+  const setConstraintMode = (key: SoftConstraintKey, mode: 'SOFT' | 'HARD') => onChange({
+    ...config,
+    softConstraints: {
+      ...config.softConstraints,
+      modes: { ...config.softConstraints.modes, [key]: mode },
+      highestPriority: mode === 'HARD'
+        ? config.softConstraints.highestPriority.filter((value) => value !== key)
+        : config.softConstraints.highestPriority,
+    },
+  });
   const updateGroup = (index: number, patch: Partial<ScheduleConfig['rules']['groups'][number]>) => onChange({
     ...config,
     rules: { ...config.rules, groups: config.rules.groups.map((group, current) => current === index ? { ...group, ...patch } : group) },
@@ -55,13 +65,18 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
   return (
     <div className="view-stack">
       <section className="card">
-        <div className="section-heading"><div><p className="eyebrow">SOFT CONSTRAINTS</p><h2>软约束优先级</h2><p>勾选项进入最高优化层，同层内按权重计算。</p></div></div>
+        <div className="section-heading"><div><p className="eyebrow">RULE STRENGTH</p><h2>规则强度与优先级</h2><p>S2 已开放“必须满足/尽量满足”切换；必须满足时不使用优先级和权重。</p></div></div>
         <div className="rule-grid">
-          {(Object.keys(softLabels) as SoftConstraintKey[]).map((key) => (
-            <label className="rule-tile" key={key}>
+          {(Object.keys(softLabels) as SoftConstraintKey[]).map((key) => {
+            const mode = config.softConstraints.modes?.[key] ?? 'SOFT';
+            const hard = mode === 'HARD';
+            return (
+            <div className={`rule-tile ${hard ? 'hard-mode' : ''}`} key={key}>
               <input
                 type="checkbox"
+                aria-label={`${key} 最高优先级`}
                 checked={config.softConstraints.highestPriority.includes(key)}
+                disabled={hard}
                 onChange={(event) => onChange({
                   ...config,
                   softConstraints: {
@@ -72,10 +87,18 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
                   },
                 })}
               />
-              <span><strong>{key} · {softLabels[key]}</strong><small>同层权重</small></span>
-              <input type="number" min="1" max="100" value={config.softConstraints.weights[key]} onChange={(event) => onChange({ ...config, softConstraints: { ...config.softConstraints, weights: { ...config.softConstraints.weights, [key]: Number(event.target.value) } } })} />
-            </label>
-          ))}
+              <span><strong>{key} · {softLabels[key]}</strong><small>{hard ? '必须满足' : '尽量满足 · 相对权重'}</small></span>
+              <input aria-label={`${key} 同层权重`} type="number" min="1" max="100" disabled={hard} value={config.softConstraints.weights[key]} onChange={(event) => onChange({ ...config, softConstraints: { ...config.softConstraints, weights: { ...config.softConstraints.weights, [key]: Number(event.target.value) } } })} />
+              {key === 'S2' && (
+                <label className="rule-mode-control">规则强度
+                  <select aria-label="S2 规则强度" value={mode} onChange={(event) => setConstraintMode(key, event.target.value as 'SOFT' | 'HARD')}>
+                    <option value="SOFT">尽量满足</option>
+                    <option value="HARD">必须满足</option>
+                  </select>
+                </label>
+              )}
+            </div>
+          );})}
         </div>
       </section>
 
@@ -89,6 +112,7 @@ export function RulesView({ config, targetMonth, onChange }: Props) {
           <label>双休段最多<input type="number" min="0" value={config.rules.consecutiveRestSegmentsMax} onChange={(event) => setRuleNumber('consecutiveRestSegmentsMax', Number(event.target.value))} /></label>
           <label>两休间工作最少<input type="number" min="0" value={config.rules.workBetweenRestMin} onChange={(event) => setRuleNumber('workBetweenRestMin', Number(event.target.value))} /></label>
           <label>两休间工作最多<input type="number" min="0" value={config.rules.workBetweenRestMax} onChange={(event) => setRuleNumber('workBetweenRestMax', Number(event.target.value))} /></label>
+          <label>中班允许最大极差<input aria-label="中班允许最大极差" type="number" min="0" max="31" value={config.rules.middleShiftMaxRange ?? 3} onChange={(event) => setRuleNumber('middleShiftMaxRange', Number(event.target.value))} /></label>
         </div>
       </section>
 

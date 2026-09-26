@@ -20,6 +20,12 @@ interface Props {
 const statusLabels: Record<ScheduleResult['status'], string> = {
   PUBLISHABLE: '可发布', EXCEPTION: '有例外', INFEASIBLE: '无可行方案', TIMEOUT: '求解超时',
 };
+const solverStatusLabels: Record<string, string> = {
+  OPTIMAL: '已找到最优解',
+  FEASIBLE: '已找到可行解（未证明最优）',
+  INFEASIBLE: '模型不可行',
+  UNKNOWN: '求解未完成',
+};
 
 function shortStateLabel(label: string): string {
   return label.endsWith('班') ? label.slice(0, -1) : label;
@@ -44,6 +50,18 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
     ...config.positions.map((position) => ({ label: shortStateLabel(position.name), state: position.id as AssignmentState })),
     { label: '总计', state: undefined },
   ], [config.positions]);
+  const configOutdated = Boolean(schedule?.configUpdatedAt && schedule.configUpdatedAt !== config.updatedAt);
+  const middleSummary = useMemo(() => {
+    const middle = config.positions.find((position) => position.name.includes('中'));
+    if (!middle || !schedule) return undefined;
+    const eligible = activeEmployees.filter((employee) => employee.skillPositionIds.includes(middle.id));
+    const counts = eligible.map((employee) => statistics.byEmployee[employee.id]?.[middle.id] ?? 0);
+    return {
+      range: counts.length > 0 ? Math.max(...counts) - Math.min(...counts) : 0,
+      limit: config.rules.middleShiftMaxRange ?? 3,
+      mode: config.softConstraints.modes?.S2 ?? 'SOFT',
+    };
+  }, [activeEmployees, config.positions, config.rules.middleShiftMaxRange, config.softConstraints.modes, schedule, statistics.byEmployee]);
 
   const openCell = (employeeId: string, date: string) => {
     const state = assignmentMap.get(`${employeeId}|${date}`) ?? 'OFF';
@@ -69,7 +87,7 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
       <section className={`status-banner ${schedule.status.toLowerCase()}`}>
         <div>
           <span className="status-dot" />
-          <div><p className="eyebrow">SCHEDULE STATUS</p><h2>{statusLabels[schedule.status]}</h2><p>{schedule.targetMonth} · 求解 {schedule.metrics.wallTimeMs}ms · {schedule.solverVersion}</p></div>
+          <div><p className="eyebrow">SCHEDULE STATUS</p><h2>{statusLabels[schedule.status]}</h2><p>{schedule.targetMonth} · {solverStatusLabels[schedule.metrics.status] ?? schedule.metrics.status} · 求解 {schedule.metrics.wallTimeMs}ms · {schedule.solverVersion}</p></div>
         </div>
         <div className="button-row">
           <button className="secondary-button" disabled={busy} onClick={() => void onGenerate()}>{busy ? '处理中…' : '重新生成'}</button>
@@ -78,6 +96,8 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
           <button className="secondary-button" disabled={schedule.assignments.length === 0} onClick={() => void onExport('CSV')}>导出 CSV</button>
         </div>
       </section>
+
+      {configOutdated && <div className="outdated-banner">配置已发生变化，当前排班仍基于旧配置。请重新生成后再判断规则是否生效。</div>}
 
       {schedule.status === 'EXCEPTION' && (
         <section className="card exception-card">
@@ -111,7 +131,7 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
                         </td>
                       );
                     })}
-                    {config.positions.map((position) => <td className="summary-cell" key={position.id}>{statistics.byEmployee[employee.id]?.[position.id] ?? 0}</td>)}
+                    {config.positions.map((position) => <td className="summary-cell" key={position.id}>{employee.skillPositionIds.includes(position.id) ? statistics.byEmployee[employee.id]?.[position.id] ?? 0 : '—'}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -151,8 +171,14 @@ export function ScheduleView({ config, schedule, preflightIssues, busy, onGenera
       <div className="dashboard-grid">
         <IssueList config={config} issues={schedule.issues} title="排班问题" />
         <section className="card score-card">
-          <div className="section-heading"><div><p className="eyebrow">SOFT SCORES</p><h3>软约束得分</h3></div></div>
-          {schedule.softScores.length === 0 ? <p className="empty-state compact">暂无评分。</p> : schedule.softScores.map((score) => <div className="score-row" key={score.ruleId}><strong>{score.ruleId}</strong><span>{score.violations} 个偏差</span><b>{score.score}</b></div>)}
+          <div className="section-heading"><div><p className="eyebrow">RULE RESULTS</p><h3>规则结果</h3></div></div>
+          {schedule.softScores.length === 0 ? <p className="empty-state compact">暂无评分。</p> : schedule.softScores.map((score) => (
+            <div className="score-row" key={score.ruleId}>
+              <strong>{score.ruleId}{score.ruleId === 'S2' && middleSummary ? ` · ${middleSummary.mode === 'HARD' ? '必须满足' : '尽量满足'}` : ''}</strong>
+              <span>{score.ruleId === 'S2' && middleSummary ? `实际极差 ${middleSummary.range} / 目标 ≤ ${middleSummary.limit}` : `${score.violations} 个偏差`}</span>
+              <b>{score.score}</b>
+            </div>
+          ))}
         </section>
       </div>
     </div>

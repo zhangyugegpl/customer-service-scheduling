@@ -76,12 +76,12 @@ export function computeSoftScores(config: ScheduleConfig, assignments: Assignmen
     if (counts.length > 0) middleRange = Math.max(...counts) - Math.min(...counts);
   }
 
+  const middleShiftMaxRange = config.rules.middleShiftMaxRange ?? 3;
   return [
     { ruleId: 'S1', score: switches * config.softConstraints.weights.S1, violations: switches },
-    { ruleId: 'S2', score: Math.max(0, middleRange - 3) * config.softConstraints.weights.S2, violations: Math.max(0, middleRange - 3) },
+    { ruleId: 'S2', score: Math.max(0, middleRange - middleShiftMaxRange) * config.softConstraints.weights.S2, violations: Math.max(0, middleRange - middleShiftMaxRange) },
     { ruleId: 'S3', score: restSegmentViolations * config.softConstraints.weights.S3, violations: restSegmentViolations },
     { ruleId: 'S4', score: workGapViolations * config.softConstraints.weights.S4, violations: workGapViolations },
     { ruleId: 'S5', score: weeklyViolations * config.softConstraints.weights.S5, violations: weeklyViolations },
   ];
 }
-

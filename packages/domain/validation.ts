@@ -7,10 +7,12 @@ import type {
   Position,
   ScheduleConfig,
   ScheduleResult,
+  SoftConstraintKey,
   ValidationIssue,
   YearMonth,
 } from '../contracts/types';
 import { getDateRange, getMonthDates, isDateInMonth, isDateInRange, previousMonth } from './date';
+import { computeSoftScores } from './scoring';
 
 function issue(input: Omit<ValidationIssue, 'sourceIds'> & { sourceIds?: string[] }): ValidationIssue {
   return { sourceIds: [], ...input };
@@ -349,6 +351,27 @@ export function validateSchedule(config: ScheduleConfig, schedule: Pick<Schedule
         issues.push(issue({ code: 'LOCKED_ASSIGNMENT_VIOLATION', ruleId: locked.state === 'OFF' ? 'H6' : position?.name.includes('审单') ? 'H9' : 'H7', severity: 'ERROR', employeeId: locked.employeeId, date, expected: locked.state, actual: actual ?? '缺失', sourceIds: [locked.id], message: `${date} 的锁定状态未满足。` }));
       }
     }
+  }
+
+  const hardRuleLabels: Record<SoftConstraintKey, string> = {
+    S1: '倒班规避',
+    S2: '中班均匀',
+    S3: '连续双休',
+    S4: '休中休间隔',
+    S5: '每周上班天数',
+  };
+  for (const score of computeSoftScores(config, schedule.assignments)) {
+    if ((config.softConstraints.modes?.[score.ruleId] ?? 'SOFT') !== 'HARD' || score.violations === 0) continue;
+    const expected = score.ruleId === 'S2' ? `极差 ≤ ${config.rules.middleShiftMaxRange ?? 3}` : '违规数为 0';
+    const actual = score.ruleId === 'S2' ? `极差 ${(config.rules.middleShiftMaxRange ?? 3) + score.violations}` : score.violations;
+    issues.push(issue({
+      code: `${score.ruleId}_HARD_CONSTRAINT_VIOLATION`,
+      ruleId: score.ruleId,
+      severity: 'ERROR',
+      expected,
+      actual,
+      message: `${hardRuleLabels[score.ruleId]}已配置为“必须满足”，当前结果未达到要求。`,
+    }));
   }
 
   return issues;

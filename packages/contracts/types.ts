@@ -7,6 +7,7 @@ export type AssignmentState = 'OFF' | PositionId;
 export type ScheduleStatus = 'PUBLISHABLE' | 'EXCEPTION' | 'INFEASIBLE' | 'TIMEOUT';
 export type IssueSeverity = 'ERROR' | 'WARNING' | 'INFO';
 export type SoftConstraintKey = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
+export type ConstraintMode = 'SOFT' | 'HARD';
 export type RuleId =
   | 'H1'
   | 'H2'
@@ -58,11 +59,13 @@ export interface RulesConfig {
   consecutiveRestSegmentsMax: number;
   workBetweenRestMin: number;
   workBetweenRestMax: number;
+  middleShiftMaxRange: number;
 }
 
 export interface SoftConstraintWeights {
   highestPriority: SoftConstraintKey[];
   weights: Record<SoftConstraintKey, number>;
+  modes: Record<SoftConstraintKey, ConstraintMode>;
 }
 
 export interface SpecifiedAssignment {
@@ -137,6 +140,8 @@ export interface SoftScore {
 export interface SolverMetrics {
   status: string;
   wallTimeMs: number;
+  strictStatus?: string;
+  hardRules?: SoftConstraintKey[];
   objectiveValue?: number;
   bestBound?: number;
   conflicts?: number;
@@ -169,6 +174,7 @@ export interface ScheduleResult {
   updatedAt: string;
   status: ScheduleStatus;
   configSnapshotId?: UUID;
+  configUpdatedAt?: string;
   solverVersion: string;
   randomSeed: number;
   assignments: Assignment[];

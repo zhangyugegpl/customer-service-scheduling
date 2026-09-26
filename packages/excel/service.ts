@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import ExcelJS from 'exceljs';
-import { createDefaultConfig } from '../contracts/defaultConfig';
+import { createDefaultConfig, CURRENT_TEMPLATE_VERSION } from '../contracts/defaultConfig';
 import type {
   BoundaryState,
   ScheduleConfig,
@@ -12,7 +12,8 @@ import type {
 import { getMonthDates, previousMonth } from '../domain/date';
 import { buildScheduleStatistics } from '../domain/statistics';
 
-const TEMPLATE_VERSION = '1.0.0';
+const TEMPLATE_VERSION = CURRENT_TEMPLATE_VERSION;
+const SUPPORTED_TEMPLATE_VERSIONS = new Set(['1.0.0', TEMPLATE_VERSION]);
 const HEADER_FILL = 'FF1F4E78';
 const HEADER_FONT = { color: { argb: 'FFFFFFFF' }, bold: true } as const;
 const BORDER: Partial<ExcelJS.Borders> = {
@@ -299,13 +300,14 @@ export async function exportConfigurationTemplate(filePath: string, config: Sche
     consecutiveRestSegmentsMax: config.rules.consecutiveRestSegmentsMax,
     workBetweenRestMin: config.rules.workBetweenRestMin,
     workBetweenRestMax: config.rules.workBetweenRestMax,
+    middleShiftMaxRange: config.rules.middleShiftMaxRange,
   })) rules.addRow(['', '参数', key, key, value]);
 
   const weights = workbook.addWorksheet('约束优先级');
-  weights.addRow(['约束项', '是否最高优先级', '同层权重']);
+  weights.addRow(['约束项', '是否最高优先级', '同层权重', '规则强度']);
   styleHeader(weights.getRow(1));
   for (const key of ['S1', 'S2', 'S3', 'S4', 'S5'] as SoftConstraintKey[]) {
-    weights.addRow([key, config.softConstraints.highestPriority.includes(key) ? '是' : '否', config.softConstraints.weights[key]]);
+    weights.addRow([key, config.softConstraints.highestPriority.includes(key) ? '是' : '否', config.softConstraints.weights[key], (config.softConstraints.modes?.[key] ?? 'SOFT') === 'HARD' ? '必须满足' : '尽量满足']);
   }
 
   const specified = workbook.addWorksheet('指定日期');
@@ -335,7 +337,7 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
   await workbook.xlsx.readFile(filePath);
   const metadata = workbook.getWorksheet('元数据');
   const version = metadata ? readText(metadata.getCell('B1')) : '';
-  if (version !== TEMPLATE_VERSION) throw new Error(`不支持的模板版本：${version || '未声明'}`);
+  if (!SUPPORTED_TEMPLATE_VERSIONS.has(version)) throw new Error(`不支持的模板版本：${version || '未声明'}`);
   const positionsSheet = workbook.getWorksheet('岗位与配额');
   const employeesSheet = workbook.getWorksheet('员工信息');
   if (!positionsSheet || !employeesSheet) throw new Error('导入文件缺少“岗位与配额”或“员工信息”Sheet。');
@@ -405,6 +407,11 @@ export async function importConfigurationWorkbook(filePath: string): Promise<Sch
     if (!['S1', 'S2', 'S3', 'S4', 'S5'].includes(key)) return;
     if (readText(row.getCell(2)) === '是') base.softConstraints.highestPriority.push(key);
     base.softConstraints.weights[key] = parseInteger(readText(row.getCell(3)), 1);
+    const mode = readText(row.getCell(4));
+    base.softConstraints.modes[key] = mode === '必须满足' || mode.toUpperCase() === 'HARD' ? 'HARD' : 'SOFT';
+    if (base.softConstraints.modes[key] === 'HARD') {
+      base.softConstraints.highestPriority = base.softConstraints.highestPriority.filter((value) => value !== key);
+    }
   });
 
   base.specifiedAssignments = [];

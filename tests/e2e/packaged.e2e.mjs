@@ -49,9 +49,14 @@ try {
   assert.match(await page.title(), /客服排班计划工具/);
 
   await page.locator('.month-control input').fill('2026-11');
+  await page.getByRole('button', { name: /排班规则/ }).click();
+  await page.getByLabel('S2 规则强度').selectOption('HARD');
+  await page.getByLabel('中班允许最大极差').fill('3');
   await page.locator('.topbar .primary-button').click();
   await page.waitForSelector('.status-banner.publishable', { timeout: 60_000 });
   assert.equal(await page.locator('.schedule-table tbody tr').count(), 9);
+  assert.match(await page.locator('.score-card').innerText(), /S2 · 必须满足/);
+  assert.match(await page.locator('.score-card').innerText(), /实际极差 [0-3] \/ 目标 ≤ 3/);
   await page.getByRole('button', { name: '保存版本' }).click();
   await page.waitForSelector('.toast.success', { timeout: 10_000 });
   await page.getByRole('button', { name: /历史记录/ }).click();
@@ -59,7 +64,7 @@ try {
   await page.getByRole('button', { name: '打开' }).first().click();
   await page.waitForSelector('.schedule-table');
   await page.screenshot({ path: path.join(outputDirectory, 'e2e-packaged-schedule.png'), fullPage: true });
-  process.stdout.write('PACKAGED_E2E_OK：成品应用使用内置求解器完成生成、保存与历史查看。\n');
+  process.stdout.write('PACKAGED_E2E_OK：成品应用使用内置求解器完成 S2 强规则、生成、保存与历史查看。\n');
 } finally {
   if (electronApp) await electronApp.close();
   await rm(dataDirectory, { recursive: true, force: true });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../../packages/contracts/defaultConfig';
+import { scheduleConfigSchema } from '../../packages/contracts/schemas';
 import type { Assignment, ScheduleResult } from '../../packages/contracts/types';
 import { getDateRange, getMonthDates, validateConfig, validateSchedule } from '../../packages/domain';
 
@@ -54,6 +55,15 @@ describe('配置预检查', () => {
     const issues = validateConfig(config, '2026-10');
     expect(issues.some((value) => value.code === 'SPECIFIED_DATE_RANGE_INVALID')).toBe(true);
   });
+
+  it('旧配置缺少规则强度和中班极差参数时使用兼容默认值', () => {
+    const legacy = structuredClone(createDefaultConfig()) as unknown as Record<string, unknown>;
+    delete (legacy.softConstraints as Record<string, unknown>).modes;
+    delete (legacy.rules as Record<string, unknown>).middleShiftMaxRange;
+    const parsed = scheduleConfigSchema.parse(legacy);
+    expect(parsed.softConstraints.modes.S2).toBe('SOFT');
+    expect(parsed.rules.middleShiftMaxRange).toBe(3);
+  });
 });
 
 describe('排班结果校验', () => {
@@ -87,5 +97,32 @@ describe('排班结果校验', () => {
     const schedule = { targetMonth: '2026-10', assignments: [] } as Pick<ScheduleResult, 'targetMonth' | 'assignments'>;
     const issues = validateSchedule(config, schedule);
     expect(issues.some((value) => value.code === 'ASSIGNMENT_COUNT_INVALID')).toBe(true);
+  });
+
+  it('S2 为必须满足时把超过阈值的中班极差标记为硬约束问题', () => {
+    const config = createDefaultConfig();
+    config.rules.groups = [];
+    config.rules.exclusionPairs = [];
+    config.rules.middleShiftMaxRange = 3;
+    config.softConstraints.modes.S2 = 'HARD';
+    for (const employee of config.employees) {
+      employee.monthlyRestDays = 0;
+      employee.skillPositionIds = config.positions.map((position) => position.id);
+    }
+    const assignments: Assignment[] = [];
+    for (const date of getMonthDates('2026-10')) {
+      config.employees.forEach((employee, index) => {
+        const position = index < 3
+          ? config.positions[0]!
+          : index < 5
+            ? config.positions[1]!
+            : index === 5
+              ? config.positions[2]!
+              : config.positions[3]!;
+        assignments.push({ employeeId: employee.id, date, state: position.id });
+      });
+    }
+    const issues = validateSchedule(config, { targetMonth: '2026-10', assignments });
+    expect(issues.some((value) => value.code === 'S2_HARD_CONSTRAINT_VIOLATION' && value.actual === '极差 31')).toBe(true);
   });
 });

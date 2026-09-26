@@ -94,11 +94,17 @@ describe('Excel 导入导出', () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'config.xlsx');
     const config = createDefaultConfig();
+    config.rules.middleShiftMaxRange = 2;
+    config.softConstraints.modes.S2 = 'HARD';
+    config.softConstraints.highestPriority = config.softConstraints.highestPriority.filter((key) => key !== 'S2');
     await exportConfigurationTemplate(filePath, config);
     const imported = await importConfigurationWorkbook(filePath);
     expect(imported.employees).toHaveLength(config.employees.length);
     expect(imported.positions).toHaveLength(config.positions.length);
     expect(imported.positions[0]!.defaultMinQuota).toBe(config.positions[0]!.defaultMinQuota);
+    expect(imported.rules.middleShiftMaxRange).toBe(2);
+    expect(imported.softConstraints.modes.S2).toBe('HARD');
+    expect(imported.softConstraints.highestPriority).not.toContain('S2');
   });
 
   it('配置模板往返保留指定日期连续范围', async () => {

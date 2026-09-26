@@ -25,6 +25,7 @@ function createEmptyResult(
     createdAt: timestamp,
     updatedAt: timestamp,
     status,
+    configUpdatedAt: request.config.updatedAt,
     solverVersion: 'unavailable',
     randomSeed: request.randomSeed ?? 1,
     assignments: [],
@@ -81,6 +82,7 @@ export class SchedulingService {
       createdAt: timestamp,
       updatedAt: timestamp,
       status: raw.status === 'EXCEPTION' ? 'EXCEPTION' : 'PUBLISHABLE',
+      configUpdatedAt: request.config.updatedAt,
       solverVersion: raw.solverVersion,
       randomSeed: request.randomSeed ?? 1,
       assignments: raw.assignments,
@@ -99,4 +101,3 @@ export class SchedulingService {
     return provisional;
   }
 }
-

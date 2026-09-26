@@ -33,12 +33,25 @@ try {
 
   const monthInput = page.locator('.month-control input');
   await monthInput.fill('2026-10');
+  await page.getByRole('button', { name: /排班规则/ }).click();
+  await page.getByLabel('S2 规则强度').selectOption('HARD');
+  assert.equal(await page.getByLabel('S2 规则强度').inputValue(), 'HARD');
+  assert.equal(await page.getByLabel('S2 同层权重').isDisabled(), true);
+  await page.getByLabel('中班允许最大极差').fill('3');
   await page.locator('.topbar .primary-button').click();
-  await page.waitForSelector('.status-banner.publishable', { timeout: 30_000 });
+  await page.waitForSelector('.status-banner, .toast.error', { timeout: 30_000 });
+  if (await page.locator('.toast.error').count()) {
+    throw new Error(`生成排班失败：${await page.locator('.toast.error').innerText()}`);
+  }
+  const savedConfig = await page.evaluate(() => window.schedulerApi.getConfig());
+  assert.equal(await page.locator('.status-banner.publishable').count(), 1, `未生成可发布排班：${await page.locator('.status-banner').innerText()}\n${await page.locator('.issue-card').innerText()}\n${JSON.stringify({ modes: savedConfig.softConstraints.modes, highestPriority: savedConfig.softConstraints.highestPriority, middleShiftMaxRange: savedConfig.rules.middleShiftMaxRange })}`);
   await page.waitForSelector('.schedule-table tbody tr', { timeout: 10_000 });
   assert.equal(await page.locator('.schedule-table tbody tr').count(), 9);
   assert.equal(await page.locator('.schedule-table thead .summary-col').count(), 4);
   assert.equal(await page.locator('.schedule-table tfoot tr').count(), 6);
+  await page.waitForSelector('.score-card');
+  assert.match(await page.locator('.score-card').innerText(), /S2 · 必须满足/);
+  assert.match(await page.locator('.score-card').innerText(), /实际极差 [0-3] \/ 目标 ≤ 3/);
   await page.locator('.schedule-scroll').evaluate((element) => { element.scrollLeft = element.scrollWidth; });
   await page.locator('.schedule-card').screenshot({ path: path.join(outputDirectory, 'e2e-schedule-statistics.png') });
 
@@ -63,7 +76,9 @@ try {
   await page.locator('.editor-table').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(outputDirectory, 'e2e-rules-date-range-viewport.png') });
   await page.screenshot({ path: path.join(outputDirectory, 'e2e-rules-date-range.png'), fullPage: true });
-  process.stdout.write('E2E_OK：生成排班 → 统计看板 → 保存版本 → 打开历史 → 连续日期指定，全部通过。\n');
+  await page.getByRole('button', { name: /排班预览/ }).click();
+  await page.waitForSelector('.outdated-banner');
+  process.stdout.write('E2E_OK：S2 强规则 → 生成排班 → 统计看板 → 保存版本 → 打开历史 → 连续日期指定 → 旧结果提醒，全部通过。\n');
 } finally {
   if (electronApp) await electronApp.close();
   await rm(dataDirectory, { recursive: true, force: true });

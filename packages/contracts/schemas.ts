@@ -32,9 +32,11 @@ export const rulesSchema = z.object({
   consecutiveRestSegmentsMax: z.number().int().min(0).max(31),
   workBetweenRestMin: z.number().int().min(0).max(31),
   workBetweenRestMax: z.number().int().min(0).max(31),
+  middleShiftMaxRange: z.number().int().min(0).max(31).default(3),
 });
 
 export const softKeySchema = z.enum(['S1', 'S2', 'S3', 'S4', 'S5']);
+export const constraintModeSchema = z.enum(['SOFT', 'HARD']);
 
 export const scheduleConfigSchema = z.object({
   schemaVersion: z.literal(1),
@@ -54,6 +56,13 @@ export const scheduleConfigSchema = z.object({
       S4: z.number().int().min(1).max(100),
       S5: z.number().int().min(1).max(100),
     }),
+    modes: z.object({
+      S1: constraintModeSchema,
+      S2: constraintModeSchema,
+      S3: constraintModeSchema,
+      S4: constraintModeSchema,
+      S5: constraintModeSchema,
+    }).default({ S1: 'SOFT', S2: 'SOFT', S3: 'SOFT', S4: 'SOFT', S5: 'SOFT' }),
   }),
   specifiedAssignments: z.array(z.object({
     id: uuid,

@@ -81,13 +81,13 @@ export class SolverClient {
           environment: this.developmentEnvironment(),
         };
       }
-      return { executable: override, arguments: argumentsList, environment: { ...process.env } };
+      return { executable: override, arguments: argumentsList, environment: this.processEnvironment() };
     }
     if (this.options.packaged) {
       return {
         executable: path.join(this.options.resourcesPath, 'solver', 'scheduler-solver.exe'),
         arguments: argumentsList,
-        environment: { ...process.env },
+        environment: this.processEnvironment(),
       };
     }
     return {
@@ -100,6 +100,10 @@ export class SolverClient {
   private developmentEnvironment(): NodeJS.ProcessEnv {
     const packages = path.join(this.options.projectRoot, '.python-packages');
     const existing = process.env.PYTHONPATH;
-    return { ...process.env, PYTHONPATH: existing ? `${packages}${path.delimiter}${existing}` : packages };
+    return { ...this.processEnvironment(), PYTHONPATH: existing ? `${packages}${path.delimiter}${existing}` : packages };
+  }
+
+  private processEnvironment(): NodeJS.ProcessEnv {
+    return { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
   }
 }

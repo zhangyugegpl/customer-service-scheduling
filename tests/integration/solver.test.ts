@@ -27,6 +27,21 @@ describe('OR-Tools 求解器集成', () => {
     expect(result.issues.filter((value) => value.severity === 'ERROR')).toHaveLength(0);
   }, 20_000);
 
+  it('通过真实进程管道传递中文岗位名时，S2 必须满足仍会生效', async () => {
+    const config = createDefaultConfig();
+    config.softConstraints.modes.S2 = 'HARD';
+    const service = new SchedulingService(client);
+    const result = await service.generate({
+      config,
+      targetMonth: '2026-10',
+      timeLimitSeconds: 5,
+      randomSeed: 7,
+    });
+    expect(result.status).toBe('PUBLISHABLE');
+    expect(result.softScores.find((value) => value.ruleId === 'S2')?.violations).toBe(0);
+    expect(result.metrics.hardRules).toContain('S2');
+  }, 20_000);
+
   it('配置预检查错误时不启动排班搜索', async () => {
     const config = createDefaultConfig();
     config.positions[0]!.defaultMinQuota = 30;

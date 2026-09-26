@@ -8,7 +8,7 @@ from typing import Any
 
 from ortools.sat.python import cp_model
 
-SOLVER_VERSION = "1.0.0"
+SOLVER_VERSION = "1.1.0"
 
 
 def month_dates(target_month: str) -> list[str]:
@@ -26,6 +26,10 @@ def inclusive_dates(start_day: str, end_day: str | None = None) -> list[str]:
 
 def quota_for(position: dict[str, Any], day: str) -> int:
     return int(position.get("dateQuotaOverrides", {}).get(day, position["defaultMinQuota"]))
+
+
+def constraint_mode(config: dict[str, Any], key: str) -> str:
+    return str(config.get("softConstraints", {}).get("modes", {}).get(key, "SOFT"))
 
 
 def and_var(model: cp_model.CpModel, name: str, values: list[cp_model.IntVar]) -> cp_model.IntVar:
@@ -183,7 +187,7 @@ def build_model(request: dict[str, Any], relaxed: bool) -> BuiltModel:
                     )
                     soft_penalties["S1"].append(transition)
 
-    # S2：中班员工数量极差超过 3 的部分。
+    # S2：中班员工数量极差超过配置上限的部分。
     middle = next((position for position in positions if "中" in position["name"]), None)
     if middle:
         counts = []
@@ -199,7 +203,8 @@ def build_model(request: dict[str, Any], relaxed: bool) -> BuiltModel:
             model.add_max_equality(maximum, counts)
             model.add_min_equality(minimum, counts)
             excess = model.new_int_var(0, len(dates), "middle_range_excess")
-            model.add(excess >= maximum - minimum - 3)
+            max_range = int(config["rules"].get("middleShiftMaxRange", 3))
+            model.add(excess >= maximum - minimum - max_range)
             soft_penalties["S2"].append(excess)
 
     # S3：用相邻双休对数量近似连续 2 天休息段。
@@ -253,6 +258,16 @@ def build_model(request: dict[str, Any], relaxed: bool) -> BuiltModel:
             soft_penalties["S5"].extend([below, above])
         monday += timedelta(days=7)
 
+    # 通用规则强度：严格模型把违规变量锁为 0；例外模型允许违规但进入硬约束惩罚层。
+    for key, penalties in soft_penalties.items():
+        if constraint_mode(config, key) != "HARD":
+            continue
+        if relaxed:
+            hard_penalties.extend(value * 30 for value in penalties)
+        else:
+            for value in penalties:
+                model.add(value == 0)
+
     return BuiltModel(model, variables, employees, positions, dates, hard_penalties, soft_penalties, change_penalties)
 
 
@@ -276,8 +291,12 @@ def configure_solver(request: dict[str, Any], time_limit: float) -> cp_model.CpS
 def solve_built_model(built: BuiltModel, request: dict[str, Any], relaxed: bool) -> tuple[cp_model.CpSolver, int]:
     started = time.perf_counter()
     time_limit = float(request.get("timeLimitSeconds", 3.0))
-    highest = list(dict.fromkeys(request["config"]["softConstraints"].get("highestPriority", [])))
-    remaining = [key for key in ("S1", "S2", "S3", "S4", "S5") if key not in highest]
+    soft_keys = [key for key in ("S1", "S2", "S3", "S4", "S5") if constraint_mode(request["config"], key) == "SOFT"]
+    highest = [
+        key for key in dict.fromkeys(request["config"]["softConstraints"].get("highestPriority", []))
+        if key in soft_keys
+    ]
+    remaining = [key for key in soft_keys if key not in highest]
 
     hard = sum(built.hard_penalties) if built.hard_penalties else 0
     changes = sum(built.change_penalties) if built.change_penalties else 0
@@ -305,6 +324,7 @@ def extract_assignments(built: BuiltModel, solver: cp_model.CpSolver) -> list[di
 
 def solve_request(request: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
+    hard_rules = [key for key in ("S1", "S2", "S3", "S4", "S5") if constraint_mode(request["config"], key) == "HARD"]
     strict = build_model(request, relaxed=False)
     solver, status = solve_built_model(strict, request, relaxed=False)
     status_name = solver.status_name(status)
@@ -317,6 +337,8 @@ def solve_request(request: dict[str, Any]) -> dict[str, Any]:
             "metrics": {
                 "status": status_name,
                 "wallTimeMs": round((time.perf_counter() - started) * 1000),
+                "strictStatus": status_name,
+                "hardRules": hard_rules,
                 "objectiveValue": solver.objective_value,
                 "bestBound": solver.best_objective_bound,
                 "conflicts": solver.num_conflicts,
@@ -329,7 +351,7 @@ def solve_request(request: dict[str, Any]) -> dict[str, Any]:
             "solverStatus": status_name,
             "status": "TIMEOUT",
             "assignments": [],
-            "metrics": {"status": status_name, "wallTimeMs": round((time.perf_counter() - started) * 1000)},
+            "metrics": {"status": status_name, "wallTimeMs": round((time.perf_counter() - started) * 1000), "strictStatus": status_name, "hardRules": hard_rules},
         }
 
     relaxed = build_model(request, relaxed=True)
@@ -345,6 +367,8 @@ def solve_request(request: dict[str, Any]) -> dict[str, Any]:
             "metrics": {
                 "status": relaxed_name,
                 "wallTimeMs": round((time.perf_counter() - started) * 1000),
+                "strictStatus": status_name,
+                "hardRules": hard_rules,
                 "objectiveValue": relaxed_solver.objective_value,
                 "bestBound": relaxed_solver.best_objective_bound,
                 "conflicts": relaxed_solver.num_conflicts,
@@ -356,5 +380,5 @@ def solve_request(request: dict[str, Any]) -> dict[str, Any]:
         "solverStatus": relaxed_name,
         "status": "INFEASIBLE",
         "assignments": [],
-        "metrics": {"status": relaxed_name, "wallTimeMs": round((time.perf_counter() - started) * 1000)},
+        "metrics": {"status": relaxed_name, "wallTimeMs": round((time.perf_counter() - started) * 1000), "strictStatus": status_name, "hardRules": hard_rules},
     }

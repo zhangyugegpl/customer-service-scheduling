@@ -1,5 +1,7 @@
 import type { ScheduleConfig } from './types';
 
+export const CURRENT_TEMPLATE_VERSION = '1.1.0';
+
 const POSITION_IDS = {
   early: '00000000-0000-4000-8000-000000000101',
   middle: '00000000-0000-4000-8000-000000000102',
@@ -16,7 +18,7 @@ export function createDefaultConfig(now = new Date()): ScheduleConfig {
   const allBaseSkills = [POSITION_IDS.early, POSITION_IDS.middle, POSITION_IDS.backoffice];
   return {
     schemaVersion: 1,
-    templateVersion: '1.0.0',
+    templateVersion: CURRENT_TEMPLATE_VERSION,
     id: '00000000-0000-4000-8000-000000000001',
     name: '默认客服组',
     updatedAt: now.toISOString(),
@@ -56,10 +58,12 @@ export function createDefaultConfig(now = new Date()): ScheduleConfig {
       consecutiveRestSegmentsMax: 2,
       workBetweenRestMin: 3,
       workBetweenRestMax: 6,
+      middleShiftMaxRange: 3,
     },
     softConstraints: {
       highestPriority: ['S1'],
       weights: { S1: 10, S2: 8, S3: 5, S4: 5, S5: 2 },
+      modes: { S1: 'SOFT', S2: 'SOFT', S3: 'SOFT', S4: 'SOFT', S5: 'SOFT' },
     },
     specifiedAssignments: [],
     specifiedRestCounts: [],
@@ -67,4 +71,3 @@ export function createDefaultConfig(now = new Date()): ScheduleConfig {
 }
 
 export { EMPLOYEE_IDS, POSITION_IDS };
-
